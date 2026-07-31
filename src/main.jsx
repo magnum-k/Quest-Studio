@@ -1,13 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
-import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTemplate, partNumber, questGroup, questSeriesKey, renderTaggedTextHtml, rewardSummary } from './quest-utils.mjs';
+import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTemplate, partNumber, questGroup, questSeriesKey, renderTaggedTextHtml, rewardSummary, stripTags } from './quest-utils.mjs';
 
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.0.15';
+const APP_VERSION = 'v1.0.16';
 const CHANGELOG = [
+  { version: 'v1.0.16', date: '2026-07-31', items: [
+    'Added an edge detail card: click a graph line to see why it exists, source/target quests, strength, reward command evidence, and required permission.',
+    'Selected graph edges are now highlighted so line debugging is easier on large quest maps.'
+  ] },
   { version: 'v1.0.15', date: '2026-07-31', items: [
     'Renamed the graph edge legend entries to describe why each line exists, not just the internal inference type.',
     'Added short helper text under each legend entry so name/part, permission-name, reward-grant, cross-quest, manual, and loop/back links are easier to read.'
@@ -535,6 +539,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   const [manualMode, setManualMode] = useState(false);
   const [connectMode, setConnectMode] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [selectedEdge, setSelectedEdge] = useState(null);
   const searchText = query.trim().toLowerCase();
   const nodeMatchesSearch = (n) => !searchText || (n.title + ' ' + n.id + ' ' + JSON.stringify(n.quest)).toLowerCase().includes(searchText);
   const baseNodes = graph.nodes.filter(n => !groupFilter || n.group === groupFilter);
@@ -626,10 +631,26 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
     if (l.reason === 'permission-grant') return 'url(#arrowPermissionGrant)';
     return 'url(#arrowQuest)';
   };
+  const edgeKey = (l) => `${l.reason || 'link'}:${String(l.source)}->${String(l.target)}`;
+  const normalizeEdgePermission = (value = '') => String(value || '').trim().toLowerCase().replace(/^xdquest\./, '').replace(/^oxide\.permission\./, '');
+  const edgeLabel = (l) => l.manual ? 'Manual link' : ({ 'name-part': 'Name/part chain', permission: 'Permission-name match', 'permission-grant': 'Reward grants permission', 'cross-quest-unlock': 'Cross-quest unlock', manual: 'Manual link' }[l.reason] || 'Quest link');
+  const edgeStrength = (l) => l.manual ? 'Strong · added by you' : ({ 'permission-grant': 'Strong · explicit reward permission', 'cross-quest-unlock': 'Strong · explicit reward permission across questlines', 'name-part': 'Medium · inferred from title/part order', permission: 'Weak · fallback permission-name match' }[l.reason] || 'Inferred');
+  const edgeWhy = (l) => l.manual ? 'This link was added manually in Connect quests mode.' : ({ 'name-part': 'The quests look like the same named line and follow each other by part number.', permission: 'The quests share a similar QuestPermission stem and sorted part order.', 'permission-grant': 'The source quest reward command grants the permission required by the target quest.', 'cross-quest-unlock': 'A reward permission grant jumps into another questline/group.' }[l.reason] || 'This link was inferred from graph rules.');
+  const edgeQuestTitle = (n) => stripTags(cleanDisplayNameMarkup(n?.quest?.QuestDisplayName || n?.title || 'Unknown quest')).trim() || n?.title || 'Unknown quest';
+  function edgeDetail(l){
+    if (!l) return null;
+    const sourceNode = l.sourceNode || nodeByIdAll.get(String(l.source));
+    const targetNode = l.targetNode || nodeByIdAll.get(String(l.target));
+    const permission = l.permission || targetNode?.requiredPermission || targetNode?.quest?.QuestPermission || '';
+    const normalized = normalizeEdgePermission(permission);
+    const grantCommand = (sourceNode?.quest?.PrizeList || []).map(r => String(r?.PrizeCommand || '')).find(cmd => normalized && normalizeEdgePermission(cmd).includes(normalized));
+    return { link: l, sourceNode, targetNode, permission, grantCommand, label: edgeLabel(l), strength: edgeStrength(l), why: edgeWhy(l) };
+  }
+  const selectedEdgeDetail = edgeDetail(selectedEdge);
 
   function updateMap(updater){ setManualMap(m => typeof updater === 'function' ? updater(m) : updater); }
   function localPoint(e){ const shell=shellRef.current; const r=shell.getBoundingClientRect(); return { x: ((e.clientX-r.left)+shell.scrollLeft)/zoom, y: ((e.clientY-r.top)+shell.scrollTop)/zoom }; }
-  function onBackgroundDown(e){ if(connectMode || e.button!==0 || e.target.closest('button,input,select,textarea,a,.node,.mapControls')) return; drag.current={sx:e.clientX,sy:e.clientY,left:shellRef.current?.scrollLeft || 0,top:shellRef.current?.scrollTop || 0}; }
+  function onBackgroundDown(e){ if(connectMode || e.button!==0 || e.target.closest('button,input,select,textarea,a,.node,.mapControls,.edgeLegend,.edgeDetail')) return; drag.current={sx:e.clientX,sy:e.clientY,left:shellRef.current?.scrollLeft || 0,top:shellRef.current?.scrollTop || 0}; }
   function onMove(e){
     if(nodeDrag.current){
       const shell = shellRef.current;
@@ -683,7 +704,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
     const frame = requestAnimationFrame(() => centerOn(selectedNode));
     return () => cancelAnimationFrame(frame);
   }, [focusRequest, selectedNode?.id, zoom]);
-  function focusLink(l){ const target = graph.nodes.find(n => n.id === String(l.target)); if (target) centerOn(target); }
+  function focusLink(l){ setSelectedEdge(l); const target = graph.nodes.find(n => n.id === String(l.target)); if (target) centerOn(target); }
   function connectedLineFrom(startId){
     const nodeById = new Map(filteredNodes.map(n => [n.id, n]));
     if (!nodeById.has(startId)) return [];
@@ -741,6 +762,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   return <div ref={shellRef} className={`mapShell ${nodeDrag.current ? 'movingNode' : ''}`} onMouseDown={onBackgroundDown} onMouseMove={onMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}>
     <div className="mapControls"><button onClick={resetScroll}>Reset view</button><button onClick={centerSelected}>Center selected</button><button onClick={()=>zoomBy(-.1)}>−</button><span>{Math.round(zoom*100)}%</span><button onClick={()=>zoomBy(.1)}>+</button><button className={manualMode?'active':''} onClick={()=>setManualMode(!manualMode)}>Move nodes</button><button onClick={lineUpSelected}>Line up selected</button><button onClick={applyGridOrder}>Apply grid order</button><button className={connectMode?'active':''} onClick={()=>{setConnectMode(!connectMode);setConnectFrom(null);}}>Connect quests</button><button onClick={clearManual}>Clear manual</button><span>{links.length} quest links ({manualLinks.length} manual) · {crossQuestUnlocks.length} cross-quest unlocks</span>{connectFrom && <span>Choose target for #{connectFrom}</span>}</div>
     <aside className="edgeLegend" aria-label="Graph edge legend"><b>Edge legend</b><span><i className="normal"></i><em>Name/part chain<small>— Auto: Part 1 → Part 2</small></em></span><span><i className="permission"></i><em>Permission-name match<small>— Fallback by QuestPermission name</small></em></span><span><i className="permissionGrant"></i><em>Reward grants permission<small>— PrizeCommand unlocks target</small></em></span><span><i className="unlock"></i><em>Cross-quest unlock<small>— Grant into another questline</small></em></span><span><i className="manual"></i><em>Manual link<small>— Added by you</small></em></span><span><i className="loop"></i><em>Loop/back edge<small>— Returns to earlier quest</small></em></span></aside>
+    {selectedEdgeDetail ? <aside className="edgeDetail" aria-label="Selected edge details"><div><b>{selectedEdgeDetail.label}</b><button onClick={()=>setSelectedEdge(null)}>×</button></div><small>{selectedEdgeDetail.strength}</small><p>{selectedEdgeDetail.why}</p><dl><dt>From</dt><dd>#{selectedEdgeDetail.link.source} · {edgeQuestTitle(selectedEdgeDetail.sourceNode)}</dd><dt>To</dt><dd>#{selectedEdgeDetail.link.target} · {edgeQuestTitle(selectedEdgeDetail.targetNode)}</dd>{selectedEdgeDetail.permission ? <><dt>Target requires</dt><dd><code>{selectedEdgeDetail.permission}</code></dd></> : null}{selectedEdgeDetail.grantCommand ? <><dt>Source reward command</dt><dd><code>{selectedEdgeDetail.grantCommand}</code></dd></> : null}<dt>Internal reason</dt><dd><code>{selectedEdgeDetail.link.reason || 'manual'}</code></dd></dl></aside> : null}
     <div className="graphCanvasWrap" style={{ width: width*zoom, height: height*zoom }}><div className="graphCanvas" style={{ width, height, transform:`scale(${zoom})` }}>
       <svg className="wires" width={width} height={height}>
         <defs>
@@ -751,7 +773,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
           <marker id="arrowLoop" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
           <marker id="arrowExternal" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
         </defs>
-        {renderLinks.map((l,i)=>{ const a=positions.get(String(l.source)), b=positions.get(String(l.target)); if(!a||!b)return null; const isUnlock=l.reason==='cross-quest-unlock'; const backEdge=!isUnlock && b.x<=a.x; const className=`${l.manual?'manual':l.reason} ${backEdge?'loopEdge':''}`; const marker=markerForLink(l,backEdge,isUnlock); if(backEdge){ const x1=a.x+nodeMidX,y1=a.y+6,x2=b.x+nodeMidX,y2=b.y+6,arch=Math.min(y1,y2)-84,labelX=(x1+x2)/2,labelY=arch-9,arrowX=(x1+x2)/2,arrowY=arch+20; return <g key={i} className="wireGroup" onClick={(e)=>{e.stopPropagation();focusLink(l);}}><path markerEnd={marker} className={className} d={`M ${x1} ${y1} C ${x1} ${arch}, ${x2} ${arch}, ${x2} ${y2}`} /><text className="wireArrow loopArrow" x={arrowX} y={arrowY} textAnchor="middle">↩</text><text className="loopDirection" x={labelX} y={labelY} textAnchor="middle">to #{String(l.target).replace(/^access:/,'')}</text></g>; } const x1=a.x+linkStartX,y1=a.y+linkY,x2=b.x+8,y2=b.y+linkY; const mid=Math.max(90,Math.abs(x2-x1)/2),arrowX=(x1+x2)/2,arrowY=(y1+y2)/2-9,angle=Math.atan2(y2-y1,x2-x1)*180/Math.PI; return <g key={i} className="wireGroup" onClick={(e)=>{e.stopPropagation();focusLink(l);}}><path markerEnd={marker} className={className} d={`M ${x1} ${y1} C ${x1+mid} ${y1-18}, ${x2-mid} ${y2+18}, ${x2} ${y2}`} /><text className={`wireArrow ${isUnlock?'externalArrow':(l.manual?'manualArrow':l.reason)}`} x={arrowX} y={arrowY} textAnchor="middle" transform={`rotate(${angle} ${arrowX} ${arrowY})`}>{isUnlock?'⇢':'➜'}</text>{isUnlock?<text className="unlockDirection" x={arrowX} y={arrowY+22} textAnchor="middle">cross unlock</text>:null}</g>;})}
+        {renderLinks.map((l,i)=>{ const a=positions.get(String(l.source)), b=positions.get(String(l.target)); if(!a||!b)return null; const isUnlock=l.reason==='cross-quest-unlock'; const backEdge=!isUnlock && b.x<=a.x; const className=`${l.manual?'manual':l.reason} ${backEdge?'loopEdge':''} ${selectedEdge && edgeKey(selectedEdge)===edgeKey(l)?'selectedEdge':''}`; const marker=markerForLink(l,backEdge,isUnlock); if(backEdge){ const x1=a.x+nodeMidX,y1=a.y+6,x2=b.x+nodeMidX,y2=b.y+6,arch=Math.min(y1,y2)-84,labelX=(x1+x2)/2,labelY=arch-9,arrowX=(x1+x2)/2,arrowY=arch+20; return <g key={i} className="wireGroup" onClick={(e)=>{e.stopPropagation();focusLink(l);}}><path markerEnd={marker} className={className} d={`M ${x1} ${y1} C ${x1} ${arch}, ${x2} ${arch}, ${x2} ${y2}`} /><text className="wireArrow loopArrow" x={arrowX} y={arrowY} textAnchor="middle">↩</text><text className="loopDirection" x={labelX} y={labelY} textAnchor="middle">to #{String(l.target).replace(/^access:/,'')}</text></g>; } const x1=a.x+linkStartX,y1=a.y+linkY,x2=b.x+8,y2=b.y+linkY; const mid=Math.max(90,Math.abs(x2-x1)/2),arrowX=(x1+x2)/2,arrowY=(y1+y2)/2-9,angle=Math.atan2(y2-y1,x2-x1)*180/Math.PI; return <g key={i} className="wireGroup" onClick={(e)=>{e.stopPropagation();focusLink(l);}}><path markerEnd={marker} className={className} d={`M ${x1} ${y1} C ${x1+mid} ${y1-18}, ${x2-mid} ${y2+18}, ${x2} ${y2}`} /><text className={`wireArrow ${isUnlock?'externalArrow':(l.manual?'manualArrow':l.reason)}`} x={arrowX} y={arrowY} textAnchor="middle" transform={`rotate(${angle} ${arrowX} ${arrowY})`}>{isUnlock?'⇢':'➜'}</text>{isUnlock?<text className="unlockDirection" x={arrowX} y={arrowY+22} textAnchor="middle">cross unlock</text>:null}</g>;})}
       </svg>
       {rows.map((row,rowIndex)=>{ const matchedCount=row.nodes.filter(n=>!contextVisible.has(n.id)).length; const contextCount=row.nodes.length-matchedCount; const oneTimeStarts=row.nodes.filter(n=>!incoming.has(n.id)&&!n.quest?.IsRepeatable).length; const repeatables=row.nodes.filter(n=>n.quest?.IsRepeatable).length; return <div className="clusterLabel" key={row.key} style={{top:26+rowIndex*rowHeight,left:22}}><b>{row.group}</b><span>{searchText ? `${matchedCount} match${matchedCount===1?'':'es'}` : `${row.nodes.length} quests`}</span>{contextCount ? <em className="contextTag">{contextCount} connected outside search</em> : null}{!searchText && oneTimeStarts ? <em>{oneTimeStarts} one-time start{oneTimeStarts>1?'s':''}</em> : null}{!searchText && repeatables ? <em>{repeatables} repeatable</em> : null}{row.loopCount ? <em className="loopTag">loop</em> : null}</div>; })}
       {rows.map(row=>{
