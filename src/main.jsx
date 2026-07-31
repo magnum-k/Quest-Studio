@@ -6,8 +6,12 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.0.14';
+const APP_VERSION = 'v1.0.15';
 const CHANGELOG = [
+  { version: 'v1.0.15', date: '2026-07-31', items: [
+    'Renamed the graph edge legend entries to describe why each line exists, not just the internal inference type.',
+    'Added short helper text under each legend entry so name/part, permission-name, reward-grant, cross-quest, manual, and loop/back links are easier to read.'
+  ] },
   { version: 'v1.0.14', date: '2026-07-31', items: [
     'Fixed graph edge colors so rendered lines, arrowheads, and the edge legend use the same colors and labels.',
     'Added an explicit legend entry for permission grants instead of hiding them behind the generic permission-stem label.'
@@ -736,7 +740,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   }
   return <div ref={shellRef} className={`mapShell ${nodeDrag.current ? 'movingNode' : ''}`} onMouseDown={onBackgroundDown} onMouseMove={onMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}>
     <div className="mapControls"><button onClick={resetScroll}>Reset view</button><button onClick={centerSelected}>Center selected</button><button onClick={()=>zoomBy(-.1)}>−</button><span>{Math.round(zoom*100)}%</span><button onClick={()=>zoomBy(.1)}>+</button><button className={manualMode?'active':''} onClick={()=>setManualMode(!manualMode)}>Move nodes</button><button onClick={lineUpSelected}>Line up selected</button><button onClick={applyGridOrder}>Apply grid order</button><button className={connectMode?'active':''} onClick={()=>{setConnectMode(!connectMode);setConnectFrom(null);}}>Connect quests</button><button onClick={clearManual}>Clear manual</button><span>{links.length} quest links ({manualLinks.length} manual) · {crossQuestUnlocks.length} cross-quest unlocks</span>{connectFrom && <span>Choose target for #{connectFrom}</span>}</div>
-    <aside className="edgeLegend" aria-label="Graph edge legend"><b>Edge legend</b><span><i className="normal"></i>Quest chain</span><span><i className="permission"></i>Permission stem</span><span><i className="permissionGrant"></i>Permission grant</span><span><i className="unlock"></i>Cross-quest unlock</span><span><i className="manual"></i>Manual link</span><span><i className="loop"></i>Loop/back edge</span></aside>
+    <aside className="edgeLegend" aria-label="Graph edge legend"><b>Edge legend</b><span><i className="normal"></i><em>Name/part chain<small>— Auto: Part 1 → Part 2</small></em></span><span><i className="permission"></i><em>Permission-name match<small>— Fallback by QuestPermission name</small></em></span><span><i className="permissionGrant"></i><em>Reward grants permission<small>— PrizeCommand unlocks target</small></em></span><span><i className="unlock"></i><em>Cross-quest unlock<small>— Grant into another questline</small></em></span><span><i className="manual"></i><em>Manual link<small>— Added by you</small></em></span><span><i className="loop"></i><em>Loop/back edge<small>— Returns to earlier quest</small></em></span></aside>
     <div className="graphCanvasWrap" style={{ width: width*zoom, height: height*zoom }}><div className="graphCanvas" style={{ width, height, transform:`scale(${zoom})` }}>
       <svg className="wires" width={width} height={height}>
         <defs>
