@@ -44,6 +44,39 @@ assert(graph.links.some(l => l.source === '1' && l.target === '2' && l.reason ==
 assert(graph.links.some(l => l.source === '43703' && l.target === '36041' && l.reason === 'permission-grant'), 'permission grant chain link');
 assert(graph.links.some(l => l.source === '96423' && l.target === '16601' && l.reason === 'permission-grant'), 'grantperm permission grant chain link');
 
+const repeatLoopGraph = buildQuestGraph([
+  {
+    QuestID: 3401,
+    QuestDisplayName: '<color=#60a5fa>Event$</color><color=#60a5fa>Event: </color>Bottled Mystery - Part 1',
+    QuestPermission: '',
+    IsRepeatable: false,
+    PrizeList: [{ PrizeCommand: 'grantperm %STEAMID% XDQuest.bottle_part_2 20d' }]
+  },
+  {
+    QuestID: 12122,
+    QuestDisplayName: '<color=#60a5fa>Event$</color><color=#60a5fa>Event: </color>Bottled Mystery - Part 1.2',
+    QuestPermission: 'bottle_part_1',
+    IsRepeatable: true,
+    PrizeList: [{ PrizeCommand: 'grantperm %STEAMID% XDQuest.bottle_part_2 20d' }]
+  },
+  {
+    QuestID: 72253,
+    QuestDisplayName: '<color=#60a5fa>Event$</color><color=#60a5fa>Event: </color>Bottled Mystery - Part 2',
+    QuestPermission: 'bottle_part_2',
+    IsRepeatable: true
+  },
+  {
+    QuestID: 61036,
+    QuestDisplayName: '<color=#60a5fa>Event$</color><color=#60a5fa>Event: </color>Bottled Mystery - Part 6',
+    QuestPermission: 'bottle_part_6',
+    IsRepeatable: true,
+    PrizeList: [{ PrizeCommand: 'grantperm %STEAMID% XDQuest.bottle_part_1 20d' }]
+  },
+]);
+assert(repeatLoopGraph.links.some(l => l.source === '3401' && l.target === '72253' && l.reason === 'permission-grant'), 'one-time starter should explicitly unlock repeatable part 2 by permission grant');
+assert(repeatLoopGraph.links.some(l => l.source === '61036' && l.target === '12122' && l.reason === 'permission-grant'), 'repeatable final quest should loop back to repeatable part 1.2 by permission grant');
+assert(!repeatLoopGraph.links.some(l => l.source === '3401' && l.target === '12122'), 'one-time starter must not name-link into repeatable subloop part 1.2');
+
 const q = newQuestTemplate([{ QuestID: 7 }]);
 assert(q.QuestID === 8, 'new id increments');
 console.log('quest-utils tests passed');

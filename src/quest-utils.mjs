@@ -184,8 +184,18 @@ export function buildQuestGraph(quests = []) {
   }
   const linkKeys = new Set();
   const links = [];
+  const shouldAddNamePartLink = (a, b) => {
+    // A one-time intro quest can grant access into a repeatable loop, but that
+    // relationship must be explicit in reward permissions. Plain title/part
+    // matching is too weak here: domains often name the first repeatable step
+    // like "Part 1.2" even though the real loopback is granted by the final
+    // repeatable quest, not by the initial one-time quest.
+    if (!a?.quest?.IsRepeatable && b?.quest?.IsRepeatable) return false;
+    return true;
+  };
   const addLink = (a, b, reason) => {
     if (!a || !b || a.id === b.id) return;
+    if (reason === 'name-part' && !shouldAddNamePartLink(a, b)) return;
     const key = `${a.id}->${b.id}`;
     if (linkKeys.has(key)) return;
     linkKeys.add(key);

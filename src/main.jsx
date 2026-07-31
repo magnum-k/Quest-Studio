@@ -6,8 +6,12 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.0.12';
+const APP_VERSION = 'v1.0.13';
 const CHANGELOG = [
+  { version: 'v1.0.13', date: '2026-07-31', items: [
+    'Fixed graph inference so one-time starter quests no longer auto-link into repeatable subloop quests by title/part name alone.',
+    'Repeatable loop access is now shown only when an explicit reward permission/manual link exists, so final repeatable quests can loop back to the correct repeatable start.'
+  ] },
   { version: 'v1.0.12', date: '2026-07-31', items: [
     'Removed the minimap from the graph because it did not add enough practical navigation value.',
     'Added a Graph boxes toggle with a Title-only mode for much smaller quest cards that make large grid views easier to scan.'
