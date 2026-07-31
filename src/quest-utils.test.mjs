@@ -1,0 +1,49 @@
+import { buildQuestGraph, newQuestTemplate, parseColorTags, renderTaggedTextHtml, stripTags, questSeriesKey, partNumber } from './quest-utils.mjs';
+
+function assert(cond, msg) { if (!cond) throw new Error(msg); }
+
+const sample = '<color=#eb8c34>Halloween$</color><color=orange>Halloween:</color> Boss';
+const tokens = parseColorTags(sample);
+assert(tokens.filter(t => t.type === 'tag').length === 4, 'should tokenize color tags');
+assert(stripTags(sample) === 'Halloween$Halloween: Boss', 'should strip tags');
+assert(!renderTaggedTextHtml(sample).includes('<color='), 'rendered preview should not show literal color tags');
+assert(renderTaggedTextHtml(sample).includes('style="color:#eb8c34"'), 'should render colored spans');
+
+assert(partNumber({ QuestDisplayName: 'Boss: Ace of Spade - Part 2' }) === 2, 'part number');
+assert(questSeriesKey({ QuestDisplayName: '<color=#c70000>Boss$</color><color=#c70000>Boss: </color>Ace of Spade - Part 1' }).includes('ace of spade'), 'series from name');
+
+const graph = buildQuestGraph([
+  { QuestID: 1, QuestDisplayName: '<color=#c70000>Boss$</color><color=#c70000>Boss: </color>Ace of Spade - Part 1', QuestPermission: '' },
+  { QuestID: 2, QuestDisplayName: '<color=#c70000>Boss$</color><color=#c70000>Boss: </color>Ace of Spade - Part 2', QuestPermission: 'aceofspade' },
+  { QuestID: 3, QuestDisplayName: '<color=orange>Halloween$</color><color=orange>Halloween:</color> B' },
+  {
+    QuestID: 43703,
+    QuestDisplayName: '<color=#ea42ad>Skill$</color><color=#ea42ad>Elevator: </color>The Price of Genius - Part 1',
+    QuestPermission: '',
+    PrizeList: [{ PrizeCommand: 'o.grant user %STEAMID% XDQuest.elevator-part2' }]
+  },
+  {
+    QuestID: 36041,
+    QuestDisplayName: '<color=#ea42ad>Skill$</color><color=#ea42ad>Elevator: </color>The Scrap Shaker 9000 - Part 2',
+    QuestPermission: 'elevator-part2'
+  },
+  {
+    QuestID: 96423,
+    QuestDisplayName: '<color=#dc2626>Raid$</color><color=#dc2626>Raid: </color>Breach and clear - Easy',
+    QuestPermission: '',
+    PrizeList: [{ PrizeCommand: 'grantperm %STEAMID% XDQuest.raid_medium 20d' }]
+  },
+  {
+    QuestID: 16601,
+    QuestDisplayName: '<color=#dc2626>Raid$</color><color=#dc2626>Raid: </color>Breach and clear - Medium',
+    QuestPermission: 'raid_medium'
+  },
+]);
+assert(graph.nodes.length === 7, 'nodes');
+assert(graph.links.some(l => l.source === '1' && l.target === '2' && l.reason === 'name-part'), 'part chain link');
+assert(graph.links.some(l => l.source === '43703' && l.target === '36041' && l.reason === 'permission-grant'), 'permission grant chain link');
+assert(graph.links.some(l => l.source === '96423' && l.target === '16601' && l.reason === 'permission-grant'), 'grantperm permission grant chain link');
+
+const q = newQuestTemplate([{ QuestID: 7 }]);
+assert(q.QuestID === 8, 'new id increments');
+console.log('quest-utils tests passed');

@@ -1,0 +1,196 @@
+[
+  {
+    "QuestID": 23401,
+    "QuestDisplayName": "<color=#00BCD4>Starter$</color><color=#00BCD4>Starter: </color>The Peace Sign",
+    "QuestDisplayNameMultiLanguage": "",
+    "QuestDescription": "<color=yellow>Oh, you found it! Great!</color> I lost that thing while I was trying to balance on a horse wearing roller skates during the <color=yellow>Great Scrap Skating Parade</color>. You ever seen a horse drift? No? Well, neither had I and now I owe the vet a lot of corn.\n\nThat peace sign has been my lucky charm since I traded it for three moldy beans and a hug back in '07. Please return it before I start hugging strangers for luck again. Things got weird last time...\"",
+    "QuestDescriptionMultiLanguage": "",
+    "QuestMissions": "Deliver the <color=#738adb>Peace Sign</color>",
+    "QuestMissionsMultiLanguage": "",
+    "QuestPermission": "",
+    "QuestType": 24,
+    "Target": "3474917368",
+    "IsReturnItemsRequired": true,
+    "IsMultiLanguage": false,
+    "ActionCount": 1,
+    "IsRepeatable": false,
+    "Cooldown": 0,
+    "PrizeList": [
+      {
+        "PrizeName": "50K XP",
+        "PrizeType": 3,
+        "ItemShortName": "",
+        "ItemAmount": 1,
+        "CustomItemName": "",
+        "ItemSkinID": 0,
+        "PrizeCommand": "givexp %STEAMID% 50000 true",
+        "CommandImageUrl": "https://i.ibb.co/6NYTcdp/50kxp.png",
+        "IsHidden": false
+      },
+      {
+        "PrizeName": "",
+        "PrizeType": 0,
+        "ItemShortName": "pistol.revolver",
+        "ItemAmount": 1,
+        "CustomItemName": "Revolver",
+        "ItemSkinID": 0,
+        "PrizeCommand": "",
+        "CommandImageUrl": "",
+        "IsHidden": false
+      },
+      {
+        "PrizeName": "",
+        "PrizeType": 0,
+        "ItemShortName": "ammo.pistol",
+        "ItemAmount": 30,
+        "CustomItemName": "Pistol Bullet",
+        "ItemSkinID": 0,
+        "PrizeCommand": "",
+        "CommandImageUrl": "",
+        "IsHidden": false
+      }
+    ]
+  },
+  {
+    "QuestID": 93935,
+    "QuestDisplayName": "<color=#00BCD4>Starter$</color><color=#00BCD4>Starter: </color>The Mystical Discord link enigma",
+    "QuestDisplayNameMultiLanguage": "",
+    "QuestDescription": "Adventurer, a cryptic riddle has been whispered through the winds of the Potato Festival, and none seem to know its true meaning. “Use the command... <color=yellow>/link...</color>” they say, but no one quite knows why. The elders of the land claim that this mysterious act will grant you access to the fabled <color=#738adb>Holy Discord Token</color>, an ancient relic connected to realms unknown (or maybe just <color=#738adb>Discord</color>). What happens when you link your account one thing’s for sure: a <color=#738adb>Discord Kit</color> awaits you upon completion.\n\nYour mission is to unravel the mystery by using the command <color=yellow>/link</color> to connect your account to <color=#738adb>Discord</color>. You’ll receive the <color=#738adb>Holy Discord Token</color>, a relic you must return to me for your reward. What does it do? No one really knows. But it’s shiny, so it’s gotta be important, right?",
+    "QuestDescriptionMultiLanguage": "",
+    "QuestMissions": "Deliver the <color=#738adb>Discord token</color>",
+    "QuestMissionsMultiLanguage": "",
+    "QuestPermission": "",
+    "QuestType": 24,
+    "Target": "3328138517",
+    "IsReturnItemsRequired": true,
+    "IsMultiLanguage": false,
+    "ActionCount": 1,
+    "IsRepeatable": false,
+    "Cooldown": 0,
+    "PrizeList": [
+      {
+        "PrizeName": "50K XP",
+        "PrizeType": 3,
+        "ItemShortName": "",
+        "ItemAmount": 1,
+        "CustomItemName": "",
+        "ItemSkinID": 0,
+        "PrizeCommand": "givexp %STEAMID% 50000 true",
+        "CommandImageUrl": "https://i.ibb.co/6NYTcdp/50kxp.png",
+        "IsHidden": false
+      }
+    ]
+  },
+  {
+    "QuestID": 90576,
+    "QuestDisplayName": "<color=#00BCD4>Starter$</color><color=#00BCD4>Starter: </color>Let's check your mind...",
+    "QuestDisplayNameMultiLanguage": "",
+    "QuestDescription": "It's boring here...\nLlet's bet with you on 6 C4 and 10 gears that you won't be able to study the design of a Homemade Hand-held Machine Gun? \n\nIf you can, I'll give you 6 C4 and 10 gears. \nIf not, you give me your life...",
+    "QuestDescriptionMultiLanguage": "",
+    "QuestMissions": "To study the drawing of such a complex weapon as a light machine gun",
+    "QuestMissionsMultiLanguage": "",
+    "QuestPermission": "",
+    "QuestType": 8,
+    "Target": "hmlmg",
+    "IsReturnItemsRequired": false,
+    "IsMultiLanguage": false,
+    "ActionCount": 1,
+    "IsRepeatable": false,
+    "Cooldown": 0,
+    "PrizeList": [
+      {
+        "PrizeName": "",
+        "PrizeType": 0,
+        "ItemShortName": "explosive.timed",
+        "ItemAmount": 6,
+        "CustomItemName": "Timed Explosive Charge",
+        "ItemSkinID": 0,
+        "PrizeCommand": "",
+        "CommandImageUrl": "",
+        "IsHidden": false
+      },
+      {
+        "PrizeName": "",
+        "PrizeType": 0,
+        "ItemShortName": "gears",
+        "ItemAmount": 10,
+        "CustomItemName": "Gears",
+        "ItemSkinID": 0,
+        "PrizeCommand": "",
+        "CommandImageUrl": "",
+        "IsHidden": false
+      }
+    ]
+  },
+  {
+    "QuestID": 40946,
+    "QuestDisplayName": "<color=#00BCD4>Starter$</color><color=#00BCD4>Starter: </color>Disposal of a cruel type of weapon",
+    "QuestDisplayNameMultiLanguage": "",
+    "QuestDescription": "The leadership of the city recognized the Machete as a very cruel type of weapon ...\nDon't you think what nonsense!? In our world... Apparently, people from above have not left the city for a long time.\n\nIn general, find and recycle 20 Machetes.",
+    "QuestDescriptionMultiLanguage": "",
+    "QuestMissions": "Recycle 20 machetes",
+    "QuestMissionsMultiLanguage": "",
+    "QuestPermission": "",
+    "QuestType": 15,
+    "Target": "machete",
+    "IsReturnItemsRequired": false,
+    "IsMultiLanguage": false,
+    "ActionCount": 1,
+    "IsRepeatable": false,
+    "Cooldown": 0,
+    "PrizeList": [
+      {
+        "PrizeName": "",
+        "PrizeType": 0,
+        "ItemShortName": "scrap",
+        "ItemAmount": 500,
+        "CustomItemName": "Scrap",
+        "ItemSkinID": 0,
+        "PrizeCommand": "",
+        "CommandImageUrl": "",
+        "IsHidden": false
+      }
+    ]
+  },
+  {
+    "QuestID": 88159,
+    "QuestDisplayName": "<color=#00BCD4>Starter$</color><color=#00BCD4>Starter: </color>Storm ravage, wood - easy",
+    "QuestDisplayNameMultiLanguage": "",
+    "QuestDescription": "As our settlement grows, so does the need for sturdy and reliable infrastructure. Recently, a heavy storm ravaged much of our lumber supply, severely hindering our ability to repair and expand our buildings. Our carpenters are skilled, but without enough wood, their hands are tied. We are thus issuing a call to all able-bodied gatherers and woodcutters to assist in restocking our vital resources.",
+    "QuestDescriptionMultiLanguage": "",
+    "QuestMissions": "Gather 3000 wood",
+    "QuestMissionsMultiLanguage": "",
+    "QuestPermission": "",
+    "QuestType": 5,
+    "Target": "wood",
+    "IsReturnItemsRequired": true,
+    "IsMultiLanguage": false,
+    "ActionCount": 3000,
+    "IsRepeatable": true,
+    "Cooldown": 86400,
+    "PrizeList": [
+      {
+        "PrizeName": "Chainsaw",
+        "PrizeType": 0,
+        "ItemShortName": "chainsaw",
+        "ItemAmount": 2,
+        "CustomItemName": "",
+        "ItemSkinID": 0,
+        "PrizeCommand": "",
+        "CommandImageUrl": "",
+        "IsHidden": false
+      },
+      {
+        "PrizeName": "Fuel",
+        "PrizeType": 0,
+        "ItemShortName": "lowgradefuel",
+        "ItemAmount": 100,
+        "CustomItemName": "",
+        "ItemSkinID": 0,
+        "PrizeCommand": "",
+        "CommandImageUrl": "",
+        "IsHidden": false
+      }
+    ]
+  }
+]
