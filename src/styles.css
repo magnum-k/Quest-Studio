@@ -484,6 +484,9 @@ header p { max-width: 670px; margin: 12px 0 0; font-size: 15px; line-height: 1.4
 .field { display: block; margin-bottom: 16px; }
 .field span { display: block; color: #9eeefb; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
 .field textarea { resize: vertical; }
+.cooldownField { display: grid; gap: 8px; margin-bottom: 16px; }
+.cooldownField .field { margin-bottom: 0; }
+.cooldownField small { color: #c4e9ff; border: 1px solid rgba(125, 211, 252, .18); background: rgba(14, 116, 144, .10); border-radius: 12px; padding: 7px 9px; font-weight: 800; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
 .four { display: grid; grid-template-columns: 1fr 150px 100px 110px; gap: 12px; align-items: start; }

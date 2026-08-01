@@ -7,8 +7,12 @@ const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.11';
+const APP_VERSION = 'v1.1.0-beta.12';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.12', date: '2026-08-01', items: [
+    'Added a Cooldown helper in fullscreen edit with hour/day/week presets that writes the correct seconds value into Quest.json.',
+    'Kept manual seconds editing available with a readable duration hint so cooldowns are easier to sanity-check.'
+  ] },
   { version: 'v1.1.0-beta.11', date: '2026-08-01', items: [
     'Cached generated AI Brain suggestions per quest in browser storage so closing and reopening fullscreen edit does not waste another generation.',
     'Added restored-cached-suggestion status text and kept Apply to draft available after reopening the quest editor.'
@@ -524,6 +528,45 @@ function Field({ label, value, onChange, type = 'text', textarea = false, rows =
     <input type={type} value={value ?? ''} onChange={e => onChange(type === 'number' ? Number(e.target.value) : e.target.value)} />
   }</label>;
 }
+const cooldownPresets = [
+  ['custom', 'Custom seconds', null],
+  ['0', 'No cooldown', 0],
+  ['1h', '1 hour', 60 * 60],
+  ['2h', '2 hours', 2 * 60 * 60],
+  ['6h', '6 hours', 6 * 60 * 60],
+  ['12h', '12 hours', 12 * 60 * 60],
+  ['1d', '1 day', 24 * 60 * 60],
+  ['2d', '2 days', 2 * 24 * 60 * 60],
+  ['3d', '3 days', 3 * 24 * 60 * 60],
+  ['7d', '7 days', 7 * 24 * 60 * 60],
+  ['14d', '14 days', 14 * 24 * 60 * 60],
+  ['30d', '30 days', 30 * 24 * 60 * 60]
+];
+function readableSeconds(total = 0) {
+  const seconds = Math.max(0, Number(total) || 0);
+  if (!seconds) return 'no cooldown';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const leftover = seconds % 60;
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (minutes) parts.push(`${minutes}m`);
+  if (leftover || !parts.length) parts.push(`${leftover}s`);
+  return parts.join(' ');
+}
+function CooldownField({ value, onChange }) {
+  const numeric = Number(value) || 0;
+  const selected = cooldownPresets.find(([, , seconds]) => seconds === numeric)?.[0] || 'custom';
+  return <div className="cooldownField">
+    <Field label="Cooldown — seconds" type="number" value={numeric} onChange={onChange} />
+    <label className="field"><span>Cooldown helper</span><select value={selected} onChange={e => { const preset = cooldownPresets.find(([id]) => id === e.target.value); if (preset && preset[2] !== null) onChange(preset[2]); }}>
+      {cooldownPresets.map(([id, label, seconds]) => <option key={id} value={id}>{seconds === null ? label : `${label} — ${seconds}s`}</option>)}
+    </select></label>
+    <small>{numeric.toLocaleString()} seconds = {readableSeconds(numeric)}</small>
+  </div>;
+}
 function BoolField({ label, value, onChange }) { return <label className="bool"><input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} /> {label}</label>; }
 
 function useSteamItems(ids) {
@@ -786,7 +829,7 @@ function EditorModal({ quest, quests = [], onClose, onSave, steamItems }) {
           <Field label="QuestDescription" value={draft.QuestDescription} onChange={v => set('QuestDescription', v)} textarea rows={7} />
           <Field label="QuestMissions" value={draft.QuestMissions} onChange={v => set('QuestMissions', v)} textarea rows={3} />
           <div className="three"><QuestTypeField value={draft.QuestType} onChange={v => set('QuestType', v)} /><Field label="Target / skin id / target" value={draft.Target} onChange={v => set('Target', v)} /><Field label="ActionCount" type="number" value={draft.ActionCount} onChange={v => set('ActionCount', v)} /></div>
-          <div className="three"><Field label="Cooldown" type="number" value={draft.Cooldown} onChange={v => set('Cooldown', v)} /><BoolField label="Repeatable" value={draft.IsRepeatable} onChange={v => set('IsRepeatable', v)} /><BoolField label="Return items required" value={draft.IsReturnItemsRequired} onChange={v => set('IsReturnItemsRequired', v)} /></div>
+          <div className="three"><CooldownField value={draft.Cooldown} onChange={v => set('Cooldown', v)} /><BoolField label="Repeatable" value={draft.IsRepeatable} onChange={v => set('IsRepeatable', v)} /><BoolField label="Return items required" value={draft.IsReturnItemsRequired} onChange={v => set('IsReturnItemsRequired', v)} /></div>
         </section>
         <AiBrainPanel draft={draft} questContext={questContext} onApply={applyAiSuggestion} />
         <section className="formPanel questRewardsPanel"><RewardEditor rewards={draft.PrizeList || []} steamItems={steamItems} onChange={v => set('PrizeList', v)} /></section>
