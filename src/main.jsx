@@ -10,7 +10,8 @@ const APP_VERSION = 'v1.1.0-beta.1';
 const CHANGELOG = [
   { version: 'v1.1.0-beta.1', date: '2026-08-01', items: [
     'Beta branch: added sidequest creation from any graph quest, including automatic permission reward wiring from source quest to new sidequest.',
-    'Added a separated full in-game style quest preview panel in the fullscreen editor so preview and edit fields are easier to compare.'
+    'Added a separated full in-game style quest preview panel in the fullscreen editor so preview and edit fields are easier to compare.',
+    'Changed the fullscreen editor into a two-zone layout: edit/reward controls scroll on the left while the in-game preview gets its own dedicated right panel.'
   ] },
   { version: 'v1.0.17', date: '2026-08-01', items: [
     'Kept the graph navigation controls fixed in the viewport so Reset view, Center selected, zoom, and graph-mode actions remain visible while scrolling large maps.'
@@ -512,15 +513,19 @@ function EditorModal({ quest, onClose, onSave, steamItems }) {
   return <div className="modalBackdrop" onMouseDown={onClose}><div className="modal" onMouseDown={e => e.stopPropagation()}>
     <div className="modalHead"><div><b>Edit quest</b><small>ID {draft.QuestID} · series {questSeriesKey(draft)} · part {partNumber(draft) ?? '—'}</small></div><button onClick={onClose}>×</button></div>
     <div className="modalBody questEditLayout">
-      <section className="formPanel prominent"><h3>Edit fields</h3><div className="two"><Field label="QuestID" type="number" value={draft.QuestID} onChange={v => set('QuestID', v)} /><Field label="QuestPermission — used for chains" value={draft.QuestPermission} onChange={v => set('QuestPermission', v)} /></div>
-        <Field label="QuestDisplayName" value={draft.QuestDisplayName} onChange={v => set('QuestDisplayName', v)} textarea rows={3} />
-        <Field label="QuestDescription" value={draft.QuestDescription} onChange={v => set('QuestDescription', v)} textarea rows={7} />
-        <Field label="QuestMissions" value={draft.QuestMissions} onChange={v => set('QuestMissions', v)} textarea rows={3} />
-        <div className="three"><QuestTypeField value={draft.QuestType} onChange={v => set('QuestType', v)} /><Field label="Target / skin id / target" value={draft.Target} onChange={v => set('Target', v)} /><Field label="ActionCount" type="number" value={draft.ActionCount} onChange={v => set('ActionCount', v)} /></div>
-        <div className="three"><Field label="Cooldown" type="number" value={draft.Cooldown} onChange={v => set('Cooldown', v)} /><BoolField label="Repeatable" value={draft.IsRepeatable} onChange={v => set('IsRepeatable', v)} /><BoolField label="Return items required" value={draft.IsReturnItemsRequired} onChange={v => set('IsReturnItemsRequired', v)} /></div>
-      </section>
-      <section className="formPanel"><RewardEditor rewards={draft.PrizeList || []} steamItems={steamItems} onChange={v => set('PrizeList', v)} /></section>
-      <QuestGamePreview quest={draft} steamItems={steamItems} />
+      <div className="questEditWorkspace" aria-label="Quest edit controls">
+        <section className="formPanel prominent"><h3>Edit fields</h3><div className="two"><Field label="QuestID" type="number" value={draft.QuestID} onChange={v => set('QuestID', v)} /><Field label="QuestPermission — used for chains" value={draft.QuestPermission} onChange={v => set('QuestPermission', v)} /></div>
+          <Field label="QuestDisplayName" value={draft.QuestDisplayName} onChange={v => set('QuestDisplayName', v)} textarea rows={3} />
+          <Field label="QuestDescription" value={draft.QuestDescription} onChange={v => set('QuestDescription', v)} textarea rows={7} />
+          <Field label="QuestMissions" value={draft.QuestMissions} onChange={v => set('QuestMissions', v)} textarea rows={3} />
+          <div className="three"><QuestTypeField value={draft.QuestType} onChange={v => set('QuestType', v)} /><Field label="Target / skin id / target" value={draft.Target} onChange={v => set('Target', v)} /><Field label="ActionCount" type="number" value={draft.ActionCount} onChange={v => set('ActionCount', v)} /></div>
+          <div className="three"><Field label="Cooldown" type="number" value={draft.Cooldown} onChange={v => set('Cooldown', v)} /><BoolField label="Repeatable" value={draft.IsRepeatable} onChange={v => set('IsRepeatable', v)} /><BoolField label="Return items required" value={draft.IsReturnItemsRequired} onChange={v => set('IsReturnItemsRequired', v)} /></div>
+        </section>
+        <section className="formPanel questRewardsPanel"><RewardEditor rewards={draft.PrizeList || []} steamItems={steamItems} onChange={v => set('PrizeList', v)} /></section>
+      </div>
+      <div className="questPreviewWorkspace" aria-label="Quest preview">
+        <QuestGamePreview quest={draft} steamItems={steamItems} />
+      </div>
     </div>
     <div className="modalFoot"><button onClick={onClose}>Cancel</button><button className="primary" onClick={() => onSave(draft)}>Save quest</button></div>
   </div></div>;
