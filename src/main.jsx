@@ -6,8 +6,12 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.9';
+const APP_VERSION = 'v1.1.0-beta.10';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.10', date: '2026-08-01', items: [
+    'Made the OpenAI AI Brain request explicitly opt in to stored/shared traffic with store: true by default, configurable in ai-brain.config.json.',
+    'Kept AI generation blocked cleanly when OpenAI returns credit_balance_exhausted so the editor does not crash or mutate draft text.'
+  ] },
   { version: 'v1.1.0-beta.9', date: '2026-08-01', items: [
     'Gave AI Brain compact Quest.json context from the uploaded browser file, including related questline/group/permission/reward-neighbor quests.',
     'Added AI context size/status details in fullscreen edit so users can see whether generation is aware of the loaded quest file.',

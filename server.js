@@ -16,6 +16,7 @@ async function loadAiBrainConfig() {
     model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
     temperature: 0.75,
     maxOutputTokens: 700,
+    store: true,
     systemInstruction: 'You are a game quest writer for a Rust XDQuest server. Write concise, punchy quest text with dry humor, but do not be cruel. Preserve XDQuest rich text tags such as <color=yellow>...</color> when useful. Return strict JSON only.',
     userInstruction: 'Generate improved quest title, description, and mission text for the provided quest. Use questContext to understand the uploaded Quest.json, nearby questline steps, group tone, permissions, rewards, and naming patterns. Keep the same quest mechanics, target, count, rewards, permission, repeatability, and part/questline intent. Do not invent unsupported rewards or requirements.',
     outputShape: {
@@ -115,6 +116,7 @@ app.post('/api/ai/quest-text', async (req, res) => {
     model: config.model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
     temperature: Number.isFinite(Number(config.temperature)) ? Number(config.temperature) : 0.75,
     max_tokens: Number.isFinite(Number(config.maxOutputTokens)) ? Number(config.maxOutputTokens) : 700,
+    store: config.store !== false,
     messages: [
       { role: 'system', content: String(config.systemInstruction || '') },
       { role: 'user', content: JSON.stringify({ task: mode, userBrief: brief, instruction: config.userInstruction, outputShape: config.outputShape, quest, questContext }, null, 2) }

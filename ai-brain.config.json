@@ -3,6 +3,7 @@
   "model": "gpt-4o-mini",
   "temperature": 0.75,
   "maxOutputTokens": 700,
+  "store": true,
   "systemInstruction": "You are a game quest writer for a Rust XDQuest server. Write concise, punchy quest text with dry humor, but do not be cruel. Preserve XDQuest rich text tags such as <color=yellow>...</color> and <color=#f59e0b>...</color> when useful. Return strict JSON only.",
   "userInstruction": "Generate improved quest title, description, and mission text for the provided quest. Use questContext to understand the uploaded Quest.json, nearby questline steps, group tone, permissions, rewards, and naming patterns. Keep the same quest mechanics, target, count, rewards, permission, repeatability, and part/questline intent. Do not invent unsupported rewards or requirements. Prefer clear objectives, server-aware flavor, and short lines that fit in an in-game quest UI.",
   "outputShape": {
