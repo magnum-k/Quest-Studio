@@ -4,6 +4,8 @@ Quest Studio is a local browser-based editor for `Quest.json` files used by the 
 
 Plugin page: <https://codefling.com/plugins/quest-system>
 
+![Quest Studio graph editor screenshot](docs/assets/quest-studio-screenshot.jpg)
+
 This project is **not** the Quest System plugin itself. It does not replace the plugin, run quests, connect to your Rust server, or change server files automatically. It is only an editor/helper tool for preparing and reviewing the plugin's JSON configuration before you upload/copy the file back to your server.
 
 ## What it does
