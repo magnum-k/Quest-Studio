@@ -5,10 +5,38 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
+const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0';
+const APP_VERSION = 'v2.0.0';
 const CHANGELOG = [
-  { version: 'v1.1.0', date: '2026-08-01', items: [
+  { version: 'v2.0.0', date: '2026-08-01', items: [
+    'Promoted beta to main as Quest Studio 2.0 with the optional AI Brain, uploaded Quest.json context, stored/shared OpenAI traffic support, and cached AI draft suggestions.',
+    'Included graph/editor stability improvements from the beta line, including crash recovery, safer graph movement, autosave compaction, and questline/permission-grant inference fixes.',
+    'Added the Cooldown helper in fullscreen edit with hour/day/week presets that still writes raw seconds into Quest.json.'
+  ] },
+  { version: 'v1.1.0-beta.12', date: '2026-08-01', items: [
+    'Added a Cooldown helper in fullscreen edit with hour/day/week presets that writes the correct seconds value into Quest.json.',
+    'Kept manual seconds editing available with a readable duration hint so cooldowns are easier to sanity-check.'
+  ] },
+  { version: 'v1.1.0-beta.11', date: '2026-08-01', items: [
+    'Cached generated AI Brain suggestions per quest in browser storage so closing and reopening fullscreen edit does not waste another generation.',
+    'Added restored-cached-suggestion status text and kept Apply to draft available after reopening the quest editor.'
+  ] },
+  { version: 'v1.1.0-beta.10', date: '2026-08-01', items: [
+    'Made the OpenAI AI Brain request explicitly opt in to stored/shared traffic with store: true by default, configurable in ai-brain.config.json.',
+    'Kept AI generation blocked cleanly when OpenAI returns credit_balance_exhausted so the editor does not crash or mutate draft text.'
+  ] },
+  { version: 'v1.1.0-beta.9', date: '2026-08-01', items: [
+    'Gave AI Brain compact Quest.json context from the uploaded browser file, including related questline/group/permission/reward-neighbor quests.',
+    'Added AI context size/status details in fullscreen edit so users can see whether generation is aware of the loaded quest file.',
+    'Kept the uploaded Quest.json local to the browser while sending only the selected quest plus compact related summaries to the local AI endpoint.'
+  ] },
+  { version: 'v1.1.0-beta.8', date: '2026-08-01', items: [
+    'Added an optional AI Brain panel in fullscreen quest editing for generating QuestDisplayName, QuestDescription, and QuestMissions suggestions.',
+    'Added a local server OpenAI endpoint that reads OPENAI_API_KEY from .env so the token never goes into the browser bundle.',
+    'Added ai-brain.config.json so server owners can edit the AI tone/instructions/model without changing app code.'
+  ] },
+  { version: 'v1.1.0-beta.7', date: '2026-08-01', items: [
     'Fixed localStorage quota crashes by falling back to a compact autosave that keeps edited Quest.json data even when undo/baseline history is too large.',
     'Autosave now records when it had to compact browser storage instead of throwing a render-crashing quota error.',
     'Reduced save-time autosave payload size so changing title color hex codes cannot trip over accumulated undo snapshots.'
@@ -260,6 +288,61 @@ const questTypeLabel = (id) => { const type = QUEST_TYPES.find(t => t.id === Num
 const prizeTypeName = (id) => PRIZE_TYPES.find(t => t.id === Number(id))?.name || `Unknown prize ${id}`;
 
 function questTitle(q) { return cleanDisplayNameMarkup(q?.QuestDisplayName || `Quest ${q?.QuestID || ''}`); }
+function compactQuestForAi(q = {}) {
+  return {
+    QuestID: q.QuestID,
+    title: questTitle(q),
+    rawTitle: q.QuestDisplayName || '',
+    description: q.QuestDescription || '',
+    mission: q.QuestMissions || '',
+    type: questTypeName(q.QuestType),
+    QuestType: q.QuestType,
+    QuestPermission: q.QuestPermission || '',
+    group: questGroup(q),
+    series: safeQuestSeriesKey(q),
+    part: safePartNumber(q),
+    target: q.Target || '',
+    ActionCount: q.ActionCount,
+    repeatable: !!q.IsRepeatable,
+    cooldown: q.Cooldown,
+    rewards: Array.isArray(q.PrizeList) ? q.PrizeList.slice(0, 8).map((r, i) => ({ title: rewardTitle(r, i), type: prizeTypeName(r.PrizeType), amount: r.ItemAmount, item: r.ItemShortName || r.CustomItemName || '', command: r.PrizeCommand || '', hidden: !!r.IsHidden })) : []
+  };
+}
+function aiQuestContext(quests = [], selectedQuest = {}) {
+  const selectedId = String(selectedQuest?.QuestID ?? '');
+  const selectedSeries = safeQuestSeriesKey(selectedQuest);
+  const selectedGroup = questGroup(selectedQuest);
+  const selectedPerm = String(selectedQuest?.QuestPermission || '').toLowerCase();
+  const selectedTitleWords = new Set(questTitle(selectedQuest).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 3));
+  const graph = buildQuestGraph(quests || []);
+  const neighborIds = new Set(graph.links.filter(l => String(l.source) === selectedId || String(l.target) === selectedId).flatMap(l => [String(l.source), String(l.target)]));
+  const scored = (quests || []).map((q, index) => {
+    const id = String(q.QuestID ?? '');
+    let score = id === selectedId ? 100 : 0;
+    if (neighborIds.has(id)) score += 80;
+    if (safeQuestSeriesKey(q) === selectedSeries) score += 45;
+    if (questGroup(q) === selectedGroup) score += 20;
+    const perm = String(q.QuestPermission || '').toLowerCase();
+    if (selectedPerm && perm && (selectedPerm.includes(perm) || perm.includes(selectedPerm))) score += 28;
+    const text = `${questTitle(q)} ${q.QuestDescription || ''} ${q.QuestMissions || ''}`.toLowerCase();
+    for (const word of selectedTitleWords) if (text.includes(word)) score += 4;
+    return { q, index, score };
+  });
+  const related = scored.filter(x => x.score > 0).sort((a,b) => (b.score - a.score) || (a.index - b.index)).slice(0, 28).map(x => compactQuestForAi(x.q));
+  const groups = {};
+  for (const q of quests || []) groups[questGroup(q)] = (groups[questGroup(q)] || 0) + 1;
+  return {
+    source: 'uploaded Quest.json in browser',
+    totalQuests: quests?.length || 0,
+    selectedQuestId: selectedQuest?.QuestID ?? null,
+    selectedGroup,
+    selectedSeries,
+    graphLinks: graph.links.length,
+    groupCounts: Object.entries(groups).sort((a,b) => b[1] - a[1]).slice(0, 20),
+    relatedQuestCount: related.length,
+    relatedQuests: related
+  };
+}
 function rewardTitle(r, i = 0) { return r?.PrizeName || r?.CustomItemName || r?.ItemShortName || r?.PrizeCommand || `Reward ${i + 1}`; }
 function rewardImage(r, steamItems = {}) { return Number(r?.ItemSkinID) ? steamItems[String(r.ItemSkinID)]?.preview : r?.CommandImageUrl; }
 function parseAmountText(text = '') {
@@ -450,6 +533,45 @@ function Field({ label, value, onChange, type = 'text', textarea = false, rows =
     <input type={type} value={value ?? ''} onChange={e => onChange(type === 'number' ? Number(e.target.value) : e.target.value)} />
   }</label>;
 }
+const cooldownPresets = [
+  ['custom', 'Custom seconds', null],
+  ['0', 'No cooldown', 0],
+  ['1h', '1 hour', 60 * 60],
+  ['2h', '2 hours', 2 * 60 * 60],
+  ['6h', '6 hours', 6 * 60 * 60],
+  ['12h', '12 hours', 12 * 60 * 60],
+  ['1d', '1 day', 24 * 60 * 60],
+  ['2d', '2 days', 2 * 24 * 60 * 60],
+  ['3d', '3 days', 3 * 24 * 60 * 60],
+  ['7d', '7 days', 7 * 24 * 60 * 60],
+  ['14d', '14 days', 14 * 24 * 60 * 60],
+  ['30d', '30 days', 30 * 24 * 60 * 60]
+];
+function readableSeconds(total = 0) {
+  const seconds = Math.max(0, Number(total) || 0);
+  if (!seconds) return 'no cooldown';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const leftover = seconds % 60;
+  const parts = [];
+  if (days) parts.push(`${days}d`);
+  if (hours) parts.push(`${hours}h`);
+  if (minutes) parts.push(`${minutes}m`);
+  if (leftover || !parts.length) parts.push(`${leftover}s`);
+  return parts.join(' ');
+}
+function CooldownField({ value, onChange }) {
+  const numeric = Number(value) || 0;
+  const selected = cooldownPresets.find(([, , seconds]) => seconds === numeric)?.[0] || 'custom';
+  return <div className="cooldownField">
+    <Field label="Cooldown — seconds" type="number" value={numeric} onChange={onChange} />
+    <label className="field"><span>Cooldown helper</span><select value={selected} onChange={e => { const preset = cooldownPresets.find(([id]) => id === e.target.value); if (preset && preset[2] !== null) onChange(preset[2]); }}>
+      {cooldownPresets.map(([id, label, seconds]) => <option key={id} value={id}>{seconds === null ? label : `${label} — ${seconds}s`}</option>)}
+    </select></label>
+    <small>{numeric.toLocaleString()} seconds = {readableSeconds(numeric)}</small>
+  </div>;
+}
 function BoolField({ label, value, onChange }) { return <label className="bool"><input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} /> {label}</label>; }
 
 function useSteamItems(ids) {
@@ -619,11 +741,89 @@ function QuestGamePreview({ quest, steamItems = {} }) {
   </aside>;
 }
 
-function EditorModal({ quest, onClose, onSave, steamItems }) {
+function aiSuggestionCacheId(q = {}) { return String(q?.QuestID ?? q?.QuestDisplayName ?? 'new-quest'); }
+function readAiSuggestionCache(id) {
+  try {
+    const all = JSON.parse(localStorage.getItem(aiBrainSuggestionsKey) || '{}');
+    return all?.[id] || null;
+  } catch { return null; }
+}
+function writeAiSuggestionCache(id, entry) {
+  try {
+    const all = JSON.parse(localStorage.getItem(aiBrainSuggestionsKey) || '{}');
+    all[id] = entry;
+    const trimmed = Object.fromEntries(Object.entries(all).sort((a,b) => (b[1]?.generatedAt || '').localeCompare(a[1]?.generatedAt || '')).slice(0, 80));
+    localStorage.setItem(aiBrainSuggestionsKey, JSON.stringify(trimmed));
+  } catch {}
+}
+
+function AiBrainPanel({ draft, questContext, onApply }) {
+  const [status, setStatus] = useState(null);
+  const cacheId = aiSuggestionCacheId(draft);
+  const cached = readAiSuggestionCache(cacheId);
+  const [brief, setBrief] = useState(cached?.brief || 'Rewrite this quest text so it feels clearer, more server-aware, and less placeholder.');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [suggestion, setSuggestion] = useState(cached?.suggestion || null);
+  const [cacheNotice, setCacheNotice] = useState(cached?.suggestion ? `Restored cached AI suggestion from ${new Date(cached.generatedAt).toLocaleTimeString()}` : '');
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/ai/status')
+      .then(r => r.json())
+      .then(data => { if (alive) setStatus(data); })
+      .catch(err => { if (alive) setStatus({ enabled: false, error: err.message }); });
+    return () => { alive = false; };
+  }, []);
+  async function generate() {
+    setLoading(true);
+    setError('');
+    setCacheNotice('');
+    setSuggestion(null);
+    try {
+      const response = await fetch('/api/ai/quest-text', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'generate-quest-text', brief, quest: draft, questContext })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `AI request failed (${response.status})`);
+      const generatedAt = new Date().toISOString();
+      setSuggestion(data.suggestion);
+      writeAiSuggestionCache(cacheId, { suggestion: data.suggestion, brief, generatedAt, model: data.model, provider: data.provider, sourceTitle: draft.QuestDisplayName || '' });
+      setCacheNotice(`Saved AI suggestion locally at ${new Date(generatedAt).toLocaleTimeString()}`);
+      setStatus(s => ({ ...(s || {}), enabled: true, provider: data.provider, model: data.model }));
+    } catch (err) {
+      setError(err.message || 'AI request failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+  const enabled = !!status?.enabled;
+  return <section className="formPanel aiBrainPanel">
+    <div className="aiBrainHead"><div><small>Optional AI Brain</small><h3>Generate quest text</h3></div><span className={enabled ? 'aiStatus ok' : 'aiStatus warn'}>{status ? (enabled ? `${status.provider || 'openai'} · ${status.model || 'model'}` : 'OPENAI_API_KEY missing') : 'Checking…'}</span></div>
+    <p className="muted">Uses the local Node server and <code>ai-brain.config.json</code>. Your OpenAI token stays in <code>.env</code>, not in the browser or exported Quest.json.</p>
+    <div className="aiContextPills"><span>{questContext?.totalQuests || 0} quests loaded</span><span>{questContext?.relatedQuestCount || 0} related sent</span><span>{questContext?.graphLinks || 0} graph links</span></div>
+    <label className="field"><span>Instruction for this quest</span><textarea rows={3} value={brief} onChange={e => setBrief(e.target.value)} placeholder="Example: make it darker, funnier, shorter, boss-themed…" /></label>
+    <div className="aiBrainActions"><button type="button" className="primary" disabled={loading || !enabled} onClick={generate}>{loading ? 'Generating…' : 'Generate suggestion'}</button><button type="button" disabled={!suggestion} onClick={() => onApply(suggestion)}>Apply to draft</button></div>
+    {!enabled ? <p className="aiBrainNote">To test OpenAI: copy <code>.env.example</code> to <code>.env</code>, set <code>OPENAI_API_KEY</code>, then restart <code>npm start</code>. No token needed yet for layout testing.</p> : null}
+    {cacheNotice ? <p className="aiBrainNote">{cacheNotice}. Closing this editor will not lose it.</p> : null}
+    {error ? <div className="aiBrainError">{error}</div> : null}
+    {suggestion ? <div className="aiSuggestion"><b>Suggestion preview</b><label><span>QuestDisplayName</span><textarea readOnly rows={2} value={suggestion.QuestDisplayName || ''} /></label><label><span>QuestDescription</span><textarea readOnly rows={5} value={suggestion.QuestDescription || ''} /></label><label><span>QuestMissions</span><textarea readOnly rows={2} value={suggestion.QuestMissions || ''} /></label></div> : null}
+  </section>;
+}
+
+function EditorModal({ quest, quests = [], onClose, onSave, steamItems }) {
   const [draft, setDraft] = useState(() => structuredClone(quest));
   const set = (key, value) => setDraft(d => ({ ...d, [key]: value }));
+  const applyAiSuggestion = (suggestion = {}) => setDraft(d => ({
+    ...d,
+    QuestDisplayName: suggestion.QuestDisplayName ?? d.QuestDisplayName,
+    QuestDescription: suggestion.QuestDescription ?? d.QuestDescription,
+    QuestMissions: suggestion.QuestMissions ?? d.QuestMissions
+  }));
   const series = safeQuestSeriesKey(draft);
   const part = safePartNumber(draft);
+  const questContext = useMemo(() => aiQuestContext(quests, draft), [quests, draft]);
   const resetKey = `${draft?.QuestID || ''}:${draft?.QuestDisplayName || ''}:${draft?.QuestMissions || ''}:${draft?.QuestDescription || ''}`;
   return <div className="modalBackdrop" onMouseDown={onClose}><div className="modal" onMouseDown={e => e.stopPropagation()}>
     <div className="modalHead"><div><b>Edit quest</b><small>ID {draft.QuestID} · series {series} · part {part ?? '—'}</small></div><button onClick={onClose}>×</button></div>
@@ -634,8 +834,9 @@ function EditorModal({ quest, onClose, onSave, steamItems }) {
           <Field label="QuestDescription" value={draft.QuestDescription} onChange={v => set('QuestDescription', v)} textarea rows={7} />
           <Field label="QuestMissions" value={draft.QuestMissions} onChange={v => set('QuestMissions', v)} textarea rows={3} />
           <div className="three"><QuestTypeField value={draft.QuestType} onChange={v => set('QuestType', v)} /><Field label="Target / skin id / target" value={draft.Target} onChange={v => set('Target', v)} /><Field label="ActionCount" type="number" value={draft.ActionCount} onChange={v => set('ActionCount', v)} /></div>
-          <div className="three"><Field label="Cooldown" type="number" value={draft.Cooldown} onChange={v => set('Cooldown', v)} /><BoolField label="Repeatable" value={draft.IsRepeatable} onChange={v => set('IsRepeatable', v)} /><BoolField label="Return items required" value={draft.IsReturnItemsRequired} onChange={v => set('IsReturnItemsRequired', v)} /></div>
+          <div className="three"><CooldownField value={draft.Cooldown} onChange={v => set('Cooldown', v)} /><BoolField label="Repeatable" value={draft.IsRepeatable} onChange={v => set('IsRepeatable', v)} /><BoolField label="Return items required" value={draft.IsReturnItemsRequired} onChange={v => set('IsReturnItemsRequired', v)} /></div>
         </section>
+        <AiBrainPanel draft={draft} questContext={questContext} onApply={applyAiSuggestion} />
         <section className="formPanel questRewardsPanel"><RewardEditor rewards={draft.PrizeList || []} steamItems={steamItems} onChange={v => set('PrizeList', v)} /></section>
       </div>
       <div className="questPreviewWorkspace" aria-label="Quest preview">
@@ -1323,7 +1524,7 @@ function App() {
   return <main className={`${compactMode ? 'compactMode' : 'comfortMode'} ${titleOnlyMode ? 'titleOnlyMode' : ''}`}><header><div className="brandBlock"><img className="brandLogo" src="/12g-logo.jpg" alt="12G" /><div><h1>Quest Studio <span className="appVersion">{APP_VERSION}</span></h1><p>Local XDQuest editor with a visual quest graph, inspector, validation, and safe JSON export.</p></div></div><div className="actions"><input ref={fileRef} type="file" accept=".json,application/json" onChange={onFile}/><button onClick={()=>fileRef.current.click()}>Load Quest.json</button><button className="primary" disabled={!quests.length} onClick={downloadJson}>Save file / Download Quest.json</button><button disabled={!quests.length} onClick={downloadMap}>Download map</button><button onClick={()=>setShowSaveInfo(true)}>Save info</button></div></header>
     <section className="tabs">{tabs.map(([id,label]) => <button key={id} className={activeTab===id?'active':''} onClick={()=>setActiveTab(id)}>{label}</button>)}</section>
     <section className="toolbar"><b>{fileName}</b><span>{quests.length} quests · {graph.links.length} auto chains · {(manualMap.links||[]).length} manual · autosaves instantly{lastSavedAt ? ` · last ${new Date(lastSavedAt).toLocaleTimeString()}` : ''} · <em className={fileNeedsDownload?'fileDirty':'fileClean'}>{fileStatus}</em> · {mapSteamStatus}</span><button className="undoButton" disabled={!undoStack.length} title={undoStack[0] ? `Undo: ${undoStack[0].label}` : 'Nothing to undo'} onClick={undoLastAction}>↶ Undo{undoStack[0] ? `: ${undoStack[0].label}` : ''}</button><input placeholder="Search quest, ID, text…" value={query} onChange={e=>setQuery(e.target.value)}/><select value={groupFilter} onChange={e=>setGroupFilter(e.target.value)}><option value="">All groups</option>{graph.groups.map(g=><option key={g}>{g}</option>)}</select><button className={compactMode?'active densityToggle':'densityToggle'} onClick={()=>setCompactMode(v=>!v)}>{compactMode?'Compact on':'Comfort mode'}</button><button className={titleOnlyMode?'active densityToggle':'densityToggle'} onClick={()=>setTitleOnlyMode(v=>!v)}>{titleOnlyMode?'Graph boxes: title only':'Graph boxes: full'}</button><button onClick={createNew}>+ New quest</button></section>
-    <div className="layout"><section className="mainPanel">{workspace}</section><QuestInspector quest={selected} baselineQuest={selected?.QuestID == null ? null : baselineById.get(String(selected.QuestID))} steamItems={steamItems} issues={issues} onPatch={patchQuest} onAdvanced={()=>selected && setEditing(selected)} /></div>{editing&&<EditorModal quest={editing} steamItems={steamItems} onClose={()=>setEditing(null)} onSave={saveQuest}/>} {showSaveInfo&&<SaveInfoOverlay fileName={fileName} sourceBaseName={sourceBaseName} savedAt={lastSavedAt} backups={localBackups} onCreateBackup={createLocalBackup} onRestoreBackup={restoreLocalBackup} onClose={()=>setShowSaveInfo(false)}/>}</main>;
+    <div className="layout"><section className="mainPanel">{workspace}</section><QuestInspector quest={selected} baselineQuest={selected?.QuestID == null ? null : baselineById.get(String(selected.QuestID))} steamItems={steamItems} issues={issues} onPatch={patchQuest} onAdvanced={()=>selected && setEditing(selected)} /></div>{editing&&<EditorModal quest={editing} quests={quests} steamItems={steamItems} onClose={()=>setEditing(null)} onSave={saveQuest}/>} {showSaveInfo&&<SaveInfoOverlay fileName={fileName} sourceBaseName={sourceBaseName} savedAt={lastSavedAt} backups={localBackups} onCreateBackup={createLocalBackup} onRestoreBackup={restoreLocalBackup} onClose={()=>setShowSaveInfo(false)}/>}</main>;
 }
 
 createRoot(document.getElementById('root')).render(<AppCrashBoundary><App/></AppCrashBoundary>);
