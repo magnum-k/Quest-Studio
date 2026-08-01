@@ -11,6 +11,13 @@ assert(renderTaggedTextHtml(sample).includes('style="color:#eb8c34"'), 'should r
 
 assert(partNumber({ QuestDisplayName: 'Boss: Ace of Spade - Part 2' }) === 2, 'part number');
 assert(questSeriesKey({ QuestDisplayName: '<color=#c70000>Boss$</color><color=#c70000>Boss: </color>Ace of Spade - Part 1' }).includes('ace of spade'), 'series from name');
+const editedSidequestName = '<color=#f59e0b>Boss$</color><color=#f59e0b>Boss: </color>Sidequest from CubeBuild: Part 1 – Block Party Gone Wrong';
+assert(stripTags(editedSidequestName).includes('Boss: Sidequest from CubeBuild'), 'edited Boss sidequest title strips safely');
+assert(renderTaggedTextHtml(editedSidequestName).includes('Boss: '), 'edited Boss sidequest title renders safely');
+assert(questSeriesKey({ QuestDisplayName: editedSidequestName }).includes('sidequest from cubebuild'), 'edited Boss sidequest series parses safely');
+const intermediateName = '<color=#f59e0b>Boss$</color><color=#f59e0b>Boss: </color>Sidequest from <color=#oops CubeBuild';
+assert(renderTaggedTextHtml(intermediateName).includes('&lt;color=#oops'), 'in-progress/broken color markup renders as escaped text');
+assert(questSeriesKey({ QuestDisplayName: intermediateName }).includes('sidequest'), 'in-progress/broken color markup does not break series parsing');
 
 const graph = buildQuestGraph([
   { QuestID: 1, QuestDisplayName: '<color=#c70000>Boss$</color><color=#c70000>Boss: </color>Ace of Spade - Part 1', QuestPermission: '' },

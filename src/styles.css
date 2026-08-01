@@ -750,7 +750,21 @@ header, .tabs, .toolbar { flex: 0 0 auto; }
 .previewRewards { display: grid; gap: 9px; }
 .previewRewards>div { display: grid; grid-template-columns: 54px minmax(0,1fr); gap: 10px; align-items: center; border: 1px solid rgba(148,163,184,.15); background: rgba(15,23,42,.46); border-radius: 16px; padding: 8px; }
 .previewRewards img, .previewRewards>div>span { width: 54px; height: 42px; border-radius: 12px; object-fit: cover; background: #0f172a; display: grid; place-items: center; color: #67e8f9; font-weight: 950; }
-.previewRewards strong, .previewRewards small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.previewRewards strong, .previewRewards small, .questGamePreview strong, .questGamePreview small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.softError {
+  border: 1px solid rgba(248, 113, 113, .34);
+  border-radius: 22px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(127, 29, 29, .28), rgba(15, 23, 42, .72));
+  color: #fecdd3;
+  min-height: 180px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+.softError b { color: #fff1f2; }
+.softError p { margin: 0; color: #fecdd3; }
+.softError code { white-space: pre-wrap; word-break: break-word; color: #fef3c7; }
 @media (max-width: 1180px) {
   .questEditLayout { grid-template-columns: 1fr; overflow: auto; }
   .questEditWorkspace { overflow: visible; padding-right: 0; }

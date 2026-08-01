@@ -6,8 +6,13 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.4';
+const APP_VERSION = 'v1.1.0-beta.5';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.5', date: '2026-08-01', items: [
+    'Prevented malformed or in-progress QuestDisplayName color/title markup from blanking the editor while typing.',
+    'Kept fullscreen quest edit fields savable even if the live preview or derived series label cannot parse temporary markup.',
+    'Added defensive tagged-text rendering fallbacks so raw quest text is shown instead of crashing the UI.'
+  ] },
   { version: 'v1.1.0-beta.4', date: '2026-08-01', items: [
     'Remembered graph scroll position when switching from Graph to Changelog/List/etc. and back.',
     'Changed generated sidequest unlock rewards to use o.grant user %STEAMID% <permission> instead of grantperm.',
@@ -343,8 +348,25 @@ function formatDiffValue(value) {
   return String(text).replace(/\s+/g, ' ').trim().slice(0, 220) || '—';
 }
 
+function safeCall(fn, fallback) {
+  try { return fn(); }
+  catch { return fallback; }
+}
+
+function safeQuestTitle(q) { return safeCall(() => questTitle(q), stripTags(q?.QuestDisplayName || q?.Name || q?.name || `Quest ${q?.QuestID ?? ''}`).trim()); }
+function safeQuestSeriesKey(q) { return safeCall(() => questSeriesKey(q), 'unparsed'); }
+function safePartNumber(q) { return safeCall(() => partNumber(q), null); }
+function safeTaggedHtml(value = '') { return safeCall(() => renderTaggedTextHtml(value || ''), String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n', '<br/>')); }
+
+class SoftRenderBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidUpdate(prevProps) { if (this.state.error && prevProps.resetKey !== this.props.resetKey) this.setState({ error: null }); }
+  render() { return this.state.error ? (this.props.fallback || <div className="softError">Preview unavailable while this draft is being edited.</div>) : this.props.children; }
+}
+
 function TaggedText({ value, className = '' }) {
-  return <span className={className} dangerouslySetInnerHTML={{ __html: renderTaggedTextHtml(value || '') }} />;
+  return <span className={className} dangerouslySetInnerHTML={{ __html: safeTaggedHtml(value || '') }} />;
 }
 
 function Field({ label, value, onChange, type = 'text', textarea = false, rows = 3 }) {
@@ -525,8 +547,11 @@ function QuestGamePreview({ quest, steamItems = {} }) {
 function EditorModal({ quest, onClose, onSave, steamItems }) {
   const [draft, setDraft] = useState(() => structuredClone(quest));
   const set = (key, value) => setDraft(d => ({ ...d, [key]: value }));
+  const series = safeQuestSeriesKey(draft);
+  const part = safePartNumber(draft);
+  const resetKey = `${draft?.QuestID || ''}:${draft?.QuestDisplayName || ''}:${draft?.QuestMissions || ''}:${draft?.QuestDescription || ''}`;
   return <div className="modalBackdrop" onMouseDown={onClose}><div className="modal" onMouseDown={e => e.stopPropagation()}>
-    <div className="modalHead"><div><b>Edit quest</b><small>ID {draft.QuestID} · series {questSeriesKey(draft)} · part {partNumber(draft) ?? '—'}</small></div><button onClick={onClose}>×</button></div>
+    <div className="modalHead"><div><b>Edit quest</b><small>ID {draft.QuestID} · series {series} · part {part ?? '—'}</small></div><button onClick={onClose}>×</button></div>
     <div className="modalBody questEditLayout">
       <div className="questEditWorkspace" aria-label="Quest edit controls">
         <section className="formPanel prominent"><h3>Edit fields</h3><div className="two"><Field label="QuestID" type="number" value={draft.QuestID} onChange={v => set('QuestID', v)} /><Field label="QuestPermission — used for chains" value={draft.QuestPermission} onChange={v => set('QuestPermission', v)} /></div>
@@ -539,7 +564,9 @@ function EditorModal({ quest, onClose, onSave, steamItems }) {
         <section className="formPanel questRewardsPanel"><RewardEditor rewards={draft.PrizeList || []} steamItems={steamItems} onChange={v => set('PrizeList', v)} /></section>
       </div>
       <div className="questPreviewWorkspace" aria-label="Quest preview">
-        <QuestGamePreview quest={draft} steamItems={steamItems} />
+        <SoftRenderBoundary resetKey={resetKey} fallback={<div className="softError"><b>Preview paused</b><p>The raw edit fields are still safe. Fix or save the title markup, then the preview will recover.</p><code>{safeQuestTitle(draft) || 'Untitled quest'}</code></div>}>
+          <QuestGamePreview quest={draft} steamItems={steamItems} />
+        </SoftRenderBoundary>
       </div>
     </div>
     <div className="modalFoot"><button onClick={onClose}>Cancel</button><button className="primary" onClick={() => onSave(draft)}>Save quest</button></div>
