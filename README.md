@@ -172,7 +172,7 @@ Quest Studio is made to help edit configuration files for the Codefling Quest Sy
 
 For plugin installation, server-side setup, permissions, commands, and where the config file belongs, use the official plugin documentation and Codefling page. This editor only helps with the JSON file.
 
-## Steam Workshop previews
+## Steam Workshop previews and API keys
 
 The local server includes a small API route used for Steam Workshop item preview lookups:
 
@@ -180,7 +180,27 @@ The local server includes a small API route used for Steam Workshop item preview
 /api/steam/workshop
 ```
 
-This sends only requested Workshop IDs to Steam's public API so the editor can show preview information for skin/item rewards. It does not upload your full quest file.
+This route calls Steam's public `ISteamRemoteStorage/GetPublishedFileDetails/v1/` endpoint with Workshop IDs only. The current code does **not** use a Steam Web API key for this lookup.
+
+There should be no real Steam API key in this repository. If you later add custom code that needs secrets, keep them in a local `.env` file and do not commit it.
+
+A blank example file is provided:
+
+```text
+.env.example
+```
+
+Copy it for your own local setup if needed:
+
+```bash
+cp .env.example .env
+```
+
+The local Node server loads `.env` through `dotenv`, so values like `PORT=8080` work with `npm start`.
+
+`.env` and `.env.*` are ignored by git, while `.env.example` is safe to commit because it contains blank/test values only.
+
+The Workshop preview request does not upload your full quest file.
 
 ## Privacy / local data
 

@@ -1,1 +1,1 @@
-{"scripts":{"dev":"vite --host 0.0.0.0","build":"vite build","start":"node server.js","test":"node src/quest-utils.test.mjs"},"dependencies":{"@vitejs/plugin-react":"latest","vite":"latest","react":"latest","react-dom":"latest","express":"latest"},"devDependencies":{}}
+{"scripts":{"dev":"vite --host 0.0.0.0","build":"vite build","start":"node server.js","test":"node src/quest-utils.test.mjs"},"dependencies":{"@vitejs/plugin-react":"latest","dotenv":"^17.4.2","express":"latest","react":"latest","react-dom":"latest","vite":"latest"},"type":"module"}
