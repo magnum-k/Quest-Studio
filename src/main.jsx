@@ -6,8 +6,13 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.6';
+const APP_VERSION = 'v1.1.0-beta.7';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.7', date: '2026-08-01', items: [
+    'Fixed localStorage quota crashes by falling back to a compact autosave that keeps edited Quest.json data even when undo/baseline history is too large.',
+    'Autosave now records when it had to compact browser storage instead of throwing a render-crashing quota error.',
+    'Reduced save-time autosave payload size so changing title color hex codes cannot trip over accumulated undo snapshots.'
+  ] },
   { version: 'v1.1.0-beta.6', date: '2026-08-01', items: [
     'Saved fullscreen quest edits to browser autosave before rebuilding the graph, so a render crash cannot lose the edited QuestDisplayName.',
     'Added an app-level recovery screen for unexpected render errors instead of leaving a blank page.',
@@ -163,6 +168,58 @@ const baseNameFromFile = (name) => {
     .trim()) || 'Quest';
 };
 const versionedFileName = (base, ext = 'json') => `${baseNameFromFile(base)}.${timestampForFile()}.${ext}`;
+function saveAutosaveSnapshot(snapshot = {}) {
+  const savedAt = snapshot.savedAt || new Date().toISOString();
+  const full = { ...snapshot, savedAt };
+  try {
+    localStorage.setItem(autosaveKey, JSON.stringify(full));
+    return { ok: true, savedAt, compacted: false };
+  } catch (fullError) {
+    const compact = {
+      ...full,
+      baselineQuests: [],
+      undoStack: [],
+      compactedAutosave: true,
+      compactedReason: String(fullError?.message || fullError)
+    };
+    try {
+      localStorage.removeItem(autosaveKey);
+      localStorage.setItem(autosaveKey, JSON.stringify(compact));
+      localStorage.setItem('quest-json-editor:last-autosave-warning', JSON.stringify({ at: savedAt, mode: 'compact', message: compact.compactedReason }));
+      return { ok: true, savedAt, compacted: true };
+    } catch (compactError) {
+      const emergency = {
+        quests: full.quests || [],
+        fileName: full.fileName || 'Quest.json',
+        sourceBaseName: full.sourceBaseName || baseNameFromFile(full.fileName || 'Quest'),
+        selectedId: full.selectedId ?? null,
+        activeTab: full.activeTab || 'graph',
+        query: full.query || '',
+        groupFilter: full.groupFilter || '',
+        compactMode: !!full.compactMode,
+        titleOnlyMode: !!full.titleOnlyMode,
+        manualMap: { positions: {}, links: [], zoom: full.manualMap?.zoom, scroll: full.manualMap?.scroll },
+        savedAt,
+        downloadedAt: full.downloadedAt || '',
+        lastDownloadedKey: full.lastDownloadedKey || '',
+        baselineQuests: [],
+        undoStack: [],
+        compactedAutosave: true,
+        compactedReason: `Emergency compact after quota failure: ${String(compactError?.message || compactError)}`
+      };
+      try {
+        localStorage.removeItem(backupsKey);
+        localStorage.removeItem(autosaveKey);
+        localStorage.setItem(autosaveKey, JSON.stringify(emergency));
+        localStorage.setItem('quest-json-editor:last-autosave-warning', JSON.stringify({ at: savedAt, mode: 'emergency', message: emergency.compactedReason }));
+        return { ok: true, savedAt, compacted: true, emergency: true };
+      } catch (emergencyError) {
+        try { localStorage.setItem('quest-json-editor:last-autosave-warning', JSON.stringify({ at: savedAt, mode: 'failed', message: String(emergencyError?.message || emergencyError) })); } catch {}
+        return { ok: false, savedAt, error: emergencyError };
+      }
+    }
+  }
+}
 const QUEST_TYPES = [
   ['IQPlagueSkill', 'IQPlagueSkill'],
   ['IQHeadReward', 'IQHeadReward'],
@@ -1118,13 +1175,13 @@ function App() {
   const { items: mapSteamItems, status: mapSteamStatus } = useSteamItems(visibleSkinIds);
   const { items: selectedSteamItems } = useSteamItems(selectedSkinIds);
   const steamItems = { ...mapSteamItems, ...selectedSteamItems };
-  useEffect(()=>{ if(fileName && fileName !== 'no file loaded') localStorage.setItem(mapKey(fileName), JSON.stringify(manualMap)); }, [manualMap, fileName]);
-  useEffect(()=>{ localStorage.setItem(backupsKey, JSON.stringify(localBackups.slice(0, 5))); }, [localBackups]);
+  useEffect(()=>{ if(fileName && fileName !== 'no file loaded') { try { localStorage.setItem(mapKey(fileName), JSON.stringify(manualMap)); } catch {} } }, [manualMap, fileName]);
+  useEffect(()=>{ try { localStorage.setItem(backupsKey, JSON.stringify(localBackups.slice(0, 5))); } catch {} }, [localBackups]);
   useEffect(()=>{
     if (!quests.length || !fileName || fileName === 'no file loaded') return;
     const savedAt = new Date().toISOString();
-    localStorage.setItem(autosaveKey, JSON.stringify({ quests, baselineQuests, fileName, sourceBaseName, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, undoStack: undoStack.slice(0, 20), savedAt, downloadedAt: lastDownloadedAt, lastDownloadedKey }));
-    setLastSavedAt(savedAt);
+    const result = saveAutosaveSnapshot({ quests, baselineQuests, fileName, sourceBaseName, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, undoStack: undoStack.slice(0, 20), savedAt, downloadedAt: lastDownloadedAt, lastDownloadedKey });
+    if (result.ok) setLastSavedAt(result.savedAt);
   }, [quests, baselineQuests, fileName, sourceBaseName, manualMap, selected?.QuestID, activeTab, query, groupFilter, compactMode, titleOnlyMode, undoStack, lastDownloadedAt, lastDownloadedKey]);
   function persistAutosaveNow(overrides = {}){
     const next = {
@@ -1135,8 +1192,8 @@ function App() {
       ...overrides
     };
     if (next.quests?.length && next.fileName && next.fileName !== 'no file loaded') {
-      localStorage.setItem(autosaveKey, JSON.stringify(next));
-      setLastSavedAt(next.savedAt);
+      const result = saveAutosaveSnapshot(next);
+      if (result.ok) setLastSavedAt(result.savedAt);
     }
     return next;
   }
