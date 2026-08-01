@@ -611,6 +611,34 @@ header p { max-width: 670px; margin: 12px 0 0; font-size: 15px; line-height: 1.4
 }
 .mapControls::-webkit-scrollbar { height: 6px; }
 .mapControls::-webkit-scrollbar-thumb { background: rgba(125, 211, 252, .36); border-radius: 999px; }
+.zoomControls {
+  position: sticky;
+  top: 12px;
+  left: 50%;
+  z-index: 18;
+  width: max-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(250, 204, 21, .42);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(31, 23, 4, .94), rgba(8, 18, 35, .92));
+  backdrop-filter: blur(18px);
+  box-shadow: 0 16px 48px rgba(0,0,0,.42), 0 0 0 4px rgba(250, 204, 21, .08);
+  transform: translateX(-50%);
+}
+.zoomControls button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  color: #03111c;
+  background: linear-gradient(135deg, #facc15, #67e8f9);
+  font-size: 20px;
+  font-weight: 1000;
+}
+.zoomControls strong { min-width: 52px; text-align: center; color: #fef3c7; font-size: 13px; }
 @media (max-width: 1180px) {
   .mapControls {
     top: auto;

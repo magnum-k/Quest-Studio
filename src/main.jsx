@@ -6,8 +6,13 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.2';
+const APP_VERSION = 'v1.1.0-beta.3';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.3', date: '2026-08-01', items: [
+    'Moved zoom controls out of the bottom graph dock into a separate top-center grid control.',
+    'Persisted graph zoom with the local map state so reload keeps the chosen zoom level.',
+    'Persisted the undo stack in browser autosave so reload keeps the available Undo action.'
+  ] },
   { version: 'v1.1.0-beta.2', date: '2026-08-01', items: [
     'Locked the main app viewport so the browser/page scrollbar is gone; graph, inspector, list, validation, and modal areas keep their own internal scrolling.',
     'Moved the graph edge legend higher and added a minimize/show button.',
@@ -617,7 +622,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   const [connectFrom, setConnectFrom] = useState(null);
   const [manualMode, setManualMode] = useState(false);
   const [connectMode, setConnectMode] = useState(false);
-  const [zoom, setZoom] = useState(1);
+  const zoom = Math.max(.55, Math.min(1.6, Number(manualMap.zoom) || 1));
   const [selectedEdge, setSelectedEdge] = useState(null);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
   const searchText = query.trim().toLowerCase();
@@ -730,7 +735,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
 
   function updateMap(updater){ setManualMap(m => typeof updater === 'function' ? updater(m) : updater); }
   function localPoint(e){ const shell=shellRef.current; const r=shell.getBoundingClientRect(); return { x: ((e.clientX-r.left)+shell.scrollLeft)/zoom, y: ((e.clientY-r.top)+shell.scrollTop)/zoom }; }
-  function onBackgroundDown(e){ if(connectMode || e.button!==0 || e.target.closest('button,input,select,textarea,a,.node,.mapControls,.edgeLegend,.edgeDetail')) return; drag.current={sx:e.clientX,sy:e.clientY,left:shellRef.current?.scrollLeft || 0,top:shellRef.current?.scrollTop || 0}; }
+  function onBackgroundDown(e){ if(connectMode || e.button!==0 || e.target.closest('button,input,select,textarea,a,.node,.mapControls,.zoomControls,.edgeLegend,.edgeDetail')) return; drag.current={sx:e.clientX,sy:e.clientY,left:shellRef.current?.scrollLeft || 0,top:shellRef.current?.scrollTop || 0}; }
   function onMove(e){
     if(nodeDrag.current){
       const shell = shellRef.current;
@@ -769,9 +774,9 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   }
   function nodePointerDown(e,n){ if(!manualMode) return; e.preventDefault(); e.stopPropagation(); const p=positions.get(n.id); const pt=localPoint(e); nodeDrag.current={id:n.id,dx:pt.x-p.x,dy:pt.y-p.y}; }
   function nodeClick(e,n){ e.stopPropagation(); if(connectMode){ if(!connectFrom){ setConnectFrom(n.id); return; } if(connectFrom!==n.id){ updateMap(m=>{ const links=m.links||[]; const exists=links.some(l=>String(l.source)===String(connectFrom)&&String(l.target)===String(n.id)); return exists?m:{...m,links:[...links,{source:connectFrom,target:n.id}]}; }); } setConnectFrom(null); return; } setSelected(n.quest); }
-  function clearManual(){ if(confirm('Clear manual positions and links for this file?')) updateMap({positions:{},links:[]}); }
+  function clearManual(){ if(confirm('Clear manual positions and links for this file?')) updateMap(m => ({...m,positions:{},links:[]})); }
   function resetScroll(){ if(shellRef.current){ shellRef.current.scrollLeft=0; shellRef.current.scrollTop=0; } }
-  function zoomBy(delta){ setZoom(z => Math.max(.55, Math.min(1.6, Number((z + delta).toFixed(2))))); }
+  function zoomBy(delta){ updateMap(m => ({ ...m, zoom: Math.max(.55, Math.min(1.6, Number(((Number(m.zoom) || zoom) + delta).toFixed(2)))) })); }
   function centerPoint(p){ if(shellRef.current && p){ shellRef.current.scrollLeft=Math.max(0,p.x*zoom-220); shellRef.current.scrollTop=Math.max(0,p.y*zoom-160); } }
   function centerOn(n){ const p=positions.get(n.id); centerPoint(p); if(n?.quest) setSelected(n.quest); }
   function centerSelected(){
@@ -840,7 +845,8 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
     onApplyGridOrder?.(orderedIds);
   }
   return <div ref={shellRef} className={`mapShell ${nodeDrag.current ? 'movingNode' : ''}`} onMouseDown={onBackgroundDown} onMouseMove={onMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}>
-    <div className="mapControls"><button onClick={resetScroll}>Reset view</button><button onClick={centerSelected}>Center selected</button><button onClick={()=>zoomBy(-.1)}>−</button><span>{Math.round(zoom*100)}%</span><button onClick={()=>zoomBy(.1)}>+</button><button className={manualMode?'active':''} onClick={()=>setManualMode(!manualMode)}>Move nodes</button><button onClick={lineUpSelected}>Line up selected</button><button onClick={applyGridOrder}>Apply grid order</button><button className={connectMode?'active':''} onClick={()=>{setConnectMode(!connectMode);setConnectFrom(null);}}>Connect quests</button><button onClick={clearManual}>Clear manual</button><span>{links.length} quest links ({manualLinks.length} manual) · {crossQuestUnlocks.length} cross-quest unlocks</span>{connectFrom && <span>Choose target for #{connectFrom}</span>}</div>
+    <div className="mapControls"><button onClick={resetScroll}>Reset view</button><button onClick={centerSelected}>Center selected</button><button className={manualMode?'active':''} onClick={()=>setManualMode(!manualMode)}>Move nodes</button><button onClick={lineUpSelected}>Line up selected</button><button onClick={applyGridOrder}>Apply grid order</button><button className={connectMode?'active':''} onClick={()=>{setConnectMode(!connectMode);setConnectFrom(null);}}>Connect quests</button><button onClick={clearManual}>Clear manual</button><span>{links.length} quest links ({manualLinks.length} manual) · {crossQuestUnlocks.length} cross-quest unlocks</span>{connectFrom && <span>Choose target for #{connectFrom}</span>}</div>
+    <div className="zoomControls" aria-label="Graph zoom controls"><button onClick={()=>zoomBy(-.1)}>−</button><strong>{Math.round(zoom*100)}%</strong><button onClick={()=>zoomBy(.1)}>+</button></div>
     <aside className={`edgeLegend ${legendCollapsed ? 'collapsed' : ''}`} aria-label="Graph edge legend"><div className="edgeLegendHead"><b>Edge legend</b><button type="button" onClick={()=>setLegendCollapsed(v=>!v)} aria-label={legendCollapsed ? 'Show edge legend' : 'Hide edge legend'}>{legendCollapsed ? '+' : '−'}</button></div>{!legendCollapsed && <><span><i className="normal"></i><em>Name/part chain<small>— Auto: Part 1 → Part 2</small></em></span><span><i className="permission"></i><em>Permission-name match<small>— Fallback by QuestPermission name</small></em></span><span><i className="permissionGrant"></i><em>Reward grants permission<small>— PrizeCommand unlocks target</small></em></span><span><i className="unlock"></i><em>Cross-quest unlock<small>— Grant into another questline</small></em></span><span><i className="manual"></i><em>Manual link<small>— Added by you</small></em></span><span><i className="loop"></i><em>Loop/back edge<small>— Returns to earlier quest</small></em></span></>}</aside>
     {selectedEdgeDetail ? <aside className="edgeDetail" aria-label="Selected edge details"><div><b>{selectedEdgeDetail.label}</b><button onClick={()=>setSelectedEdge(null)}>×</button></div><small>{selectedEdgeDetail.strength}</small><p>{selectedEdgeDetail.why}</p><dl><dt>From</dt><dd>#{selectedEdgeDetail.link.source} · {edgeQuestTitle(selectedEdgeDetail.sourceNode)}</dd><dt>To</dt><dd>#{selectedEdgeDetail.link.target} · {edgeQuestTitle(selectedEdgeDetail.targetNode)}</dd>{selectedEdgeDetail.permission ? <><dt>Target requires</dt><dd><code>{selectedEdgeDetail.permission}</code></dd></> : null}{selectedEdgeDetail.grantCommand ? <><dt>Source reward command</dt><dd><code>{selectedEdgeDetail.grantCommand}</code></dd></> : null}<dt>Internal reason</dt><dd><code>{selectedEdgeDetail.link.reason || 'manual'}</code></dd></dl></aside> : null}
     <div className="graphCanvasWrap" style={{ width: width*zoom, height: height*zoom }}><div className="graphCanvas" style={{ width, height, transform:`scale(${zoom})` }}>
@@ -1010,7 +1016,7 @@ function App() {
     try { return JSON.parse(localStorage.getItem(backupsKey) || '[]'); }
     catch { return []; }
   });
-  const [undoStack, setUndoStack] = useState([]);
+  const [undoStack, setUndoStack] = useState(() => Array.isArray(initial.undoStack) ? initial.undoStack.slice(0, 20) : []);
   const [graphRevision, setGraphRevision] = useState(0);
   const [graphFocusRequest, setGraphFocusRequest] = useState(0);
   const graph = useMemo(()=>buildQuestGraph(quests),[quests]);
@@ -1026,10 +1032,10 @@ function App() {
   useEffect(()=>{
     if (!quests.length || !fileName || fileName === 'no file loaded') return;
     const savedAt = new Date().toISOString();
-    localStorage.setItem(autosaveKey, JSON.stringify({ quests, baselineQuests, fileName, sourceBaseName, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, savedAt, downloadedAt: lastDownloadedAt, lastDownloadedKey }));
+    localStorage.setItem(autosaveKey, JSON.stringify({ quests, baselineQuests, fileName, sourceBaseName, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, undoStack: undoStack.slice(0, 20), savedAt, downloadedAt: lastDownloadedAt, lastDownloadedKey }));
     setLastSavedAt(savedAt);
-  }, [quests, baselineQuests, fileName, sourceBaseName, manualMap, selected?.QuestID, activeTab, query, groupFilter, compactMode, titleOnlyMode, lastDownloadedAt, lastDownloadedKey]);
-  async function loadText(text,name){ const parsed=JSON.parse(text); if(!Array.isArray(parsed)) throw new Error('Quest.json must be an array of quest objects'); setQuests(parsed); setBaselineQuests(parsed); setFileName(name); setSourceBaseName(baseNameFromFile(name)); setSelected(parsed[0]||null); setGroupFilter(''); setActiveTab('graph'); try{ setManualMap(JSON.parse(localStorage.getItem(mapKey(name)) || '{"positions":{},"links":[]}')); }catch{ setManualMap({positions:{},links:[]}); } }
+  }, [quests, baselineQuests, fileName, sourceBaseName, manualMap, selected?.QuestID, activeTab, query, groupFilter, compactMode, titleOnlyMode, undoStack, lastDownloadedAt, lastDownloadedKey]);
+  async function loadText(text,name){ const parsed=JSON.parse(text); if(!Array.isArray(parsed)) throw new Error('Quest.json must be an array of quest objects'); setQuests(parsed); setBaselineQuests(parsed); setFileName(name); setSourceBaseName(baseNameFromFile(name)); setSelected(parsed[0]||null); setGroupFilter(''); setActiveTab('graph'); setUndoStack([]); try{ setManualMap(JSON.parse(localStorage.getItem(mapKey(name)) || '{"positions":{},"links":[]}')); }catch{ setManualMap({positions:{},links:[]}); } }
   async function onFile(e){ const file=e.target.files?.[0]; if(!file)return; try{ await loadText(await file.text(),file.name); }catch(err){ alert('JSON error: '+err.message); } }
   function refreshGraphView(){ setGraphRevision(v => v + 1); }
   function captureUndoState(label){
@@ -1047,7 +1053,7 @@ function App() {
   function restoreUndoState(snapshot){
     setQuests(snapshot.quests || []);
     setBaselineQuests(snapshot.baselineQuests || snapshot.quests || []);
-    setManualMap(snapshot.manualMap || {positions:{},links:[]});
+    setManualMap({ ...(snapshot.manualMap || {positions:{},links:[]}), zoom: manualMap.zoom ?? snapshot.manualMap?.zoom });
     setFileName(snapshot.fileName || 'Quest.json');
     setSourceBaseName(snapshot.sourceBaseName || baseNameFromFile(snapshot.fileName || 'Quest'));
     setSelected((snapshot.quests || []).find(q => String(q.QuestID) === String(snapshot.selectedId)) || (snapshot.quests || [])[0] || null);
