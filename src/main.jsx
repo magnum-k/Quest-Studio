@@ -5,9 +5,14 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
+const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.10';
+const APP_VERSION = 'v1.1.0-beta.11';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.11', date: '2026-08-01', items: [
+    'Cached generated AI Brain suggestions per quest in browser storage so closing and reopening fullscreen edit does not waste another generation.',
+    'Added restored-cached-suggestion status text and kept Apply to draft available after reopening the quest editor.'
+  ] },
   { version: 'v1.1.0-beta.10', date: '2026-08-01', items: [
     'Made the OpenAI AI Brain request explicitly opt in to stored/shared traffic with store: true by default, configurable in ai-brain.config.json.',
     'Kept AI generation blocked cleanly when OpenAI returns credit_balance_exhausted so the editor does not crash or mutate draft text.'
@@ -688,12 +693,31 @@ function QuestGamePreview({ quest, steamItems = {} }) {
   </aside>;
 }
 
+function aiSuggestionCacheId(q = {}) { return String(q?.QuestID ?? q?.QuestDisplayName ?? 'new-quest'); }
+function readAiSuggestionCache(id) {
+  try {
+    const all = JSON.parse(localStorage.getItem(aiBrainSuggestionsKey) || '{}');
+    return all?.[id] || null;
+  } catch { return null; }
+}
+function writeAiSuggestionCache(id, entry) {
+  try {
+    const all = JSON.parse(localStorage.getItem(aiBrainSuggestionsKey) || '{}');
+    all[id] = entry;
+    const trimmed = Object.fromEntries(Object.entries(all).sort((a,b) => (b[1]?.generatedAt || '').localeCompare(a[1]?.generatedAt || '')).slice(0, 80));
+    localStorage.setItem(aiBrainSuggestionsKey, JSON.stringify(trimmed));
+  } catch {}
+}
+
 function AiBrainPanel({ draft, questContext, onApply }) {
   const [status, setStatus] = useState(null);
-  const [brief, setBrief] = useState('Rewrite this quest text so it feels clearer, more server-aware, and less placeholder.');
+  const cacheId = aiSuggestionCacheId(draft);
+  const cached = readAiSuggestionCache(cacheId);
+  const [brief, setBrief] = useState(cached?.brief || 'Rewrite this quest text so it feels clearer, more server-aware, and less placeholder.');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [suggestion, setSuggestion] = useState(null);
+  const [suggestion, setSuggestion] = useState(cached?.suggestion || null);
+  const [cacheNotice, setCacheNotice] = useState(cached?.suggestion ? `Restored cached AI suggestion from ${new Date(cached.generatedAt).toLocaleTimeString()}` : '');
   useEffect(() => {
     let alive = true;
     fetch('/api/ai/status')
@@ -705,6 +729,7 @@ function AiBrainPanel({ draft, questContext, onApply }) {
   async function generate() {
     setLoading(true);
     setError('');
+    setCacheNotice('');
     setSuggestion(null);
     try {
       const response = await fetch('/api/ai/quest-text', {
@@ -714,7 +739,10 @@ function AiBrainPanel({ draft, questContext, onApply }) {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || `AI request failed (${response.status})`);
+      const generatedAt = new Date().toISOString();
       setSuggestion(data.suggestion);
+      writeAiSuggestionCache(cacheId, { suggestion: data.suggestion, brief, generatedAt, model: data.model, provider: data.provider, sourceTitle: draft.QuestDisplayName || '' });
+      setCacheNotice(`Saved AI suggestion locally at ${new Date(generatedAt).toLocaleTimeString()}`);
       setStatus(s => ({ ...(s || {}), enabled: true, provider: data.provider, model: data.model }));
     } catch (err) {
       setError(err.message || 'AI request failed');
@@ -730,6 +758,7 @@ function AiBrainPanel({ draft, questContext, onApply }) {
     <label className="field"><span>Instruction for this quest</span><textarea rows={3} value={brief} onChange={e => setBrief(e.target.value)} placeholder="Example: make it darker, funnier, shorter, boss-themed…" /></label>
     <div className="aiBrainActions"><button type="button" className="primary" disabled={loading || !enabled} onClick={generate}>{loading ? 'Generating…' : 'Generate suggestion'}</button><button type="button" disabled={!suggestion} onClick={() => onApply(suggestion)}>Apply to draft</button></div>
     {!enabled ? <p className="aiBrainNote">To test OpenAI: copy <code>.env.example</code> to <code>.env</code>, set <code>OPENAI_API_KEY</code>, then restart <code>npm start</code>. No token needed yet for layout testing.</p> : null}
+    {cacheNotice ? <p className="aiBrainNote">{cacheNotice}. Closing this editor will not lose it.</p> : null}
     {error ? <div className="aiBrainError">{error}</div> : null}
     {suggestion ? <div className="aiSuggestion"><b>Suggestion preview</b><label><span>QuestDisplayName</span><textarea readOnly rows={2} value={suggestion.QuestDisplayName || ''} /></label><label><span>QuestDescription</span><textarea readOnly rows={5} value={suggestion.QuestDescription || ''} /></label><label><span>QuestMissions</span><textarea readOnly rows={2} value={suggestion.QuestMissions || ''} /></label></div> : null}
   </section>;
