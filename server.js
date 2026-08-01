@@ -17,7 +17,7 @@ async function loadAiBrainConfig() {
     temperature: 0.75,
     maxOutputTokens: 700,
     systemInstruction: 'You are a game quest writer for a Rust XDQuest server. Write concise, punchy quest text with dry humor, but do not be cruel. Preserve XDQuest rich text tags such as <color=yellow>...</color> when useful. Return strict JSON only.',
-    userInstruction: 'Generate improved quest title, description, and mission text for the provided quest. Keep the same quest mechanics, target, count, rewards, permission, repeatability, and part/questline intent. Do not invent unsupported rewards or requirements.',
+    userInstruction: 'Generate improved quest title, description, and mission text for the provided quest. Use questContext to understand the uploaded Quest.json, nearby questline steps, group tone, permissions, rewards, and naming patterns. Keep the same quest mechanics, target, count, rewards, permission, repeatability, and part/questline intent. Do not invent unsupported rewards or requirements.',
     outputShape: {
       QuestDisplayName: 'string, may include XDQuest <color=#hex> tags',
       QuestDescription: 'string, player-facing description',
@@ -58,6 +58,37 @@ function sanitizeQuestForAi(q = {}) {
   };
 }
 
+function sanitizeQuestContextForAi(context = {}) {
+  return {
+    source: String(context.source || 'uploaded Quest.json').slice(0, 120),
+    totalQuests: Number(context.totalQuests) || 0,
+    selectedQuestId: context.selectedQuestId ?? null,
+    selectedGroup: String(context.selectedGroup || '').slice(0, 120),
+    selectedSeries: String(context.selectedSeries || '').slice(0, 180),
+    graphLinks: Number(context.graphLinks) || 0,
+    groupCounts: Array.isArray(context.groupCounts) ? context.groupCounts.slice(0, 20) : [],
+    relatedQuestCount: Number(context.relatedQuestCount) || 0,
+    relatedQuests: Array.isArray(context.relatedQuests) ? context.relatedQuests.slice(0, 28).map((q) => ({
+      QuestID: q.QuestID,
+      title: String(q.title || '').slice(0, 220),
+      rawTitle: String(q.rawTitle || '').slice(0, 260),
+      description: String(q.description || '').slice(0, 700),
+      mission: String(q.mission || '').slice(0, 360),
+      type: String(q.type || '').slice(0, 80),
+      QuestType: q.QuestType,
+      QuestPermission: String(q.QuestPermission || '').slice(0, 160),
+      group: String(q.group || '').slice(0, 120),
+      series: String(q.series || '').slice(0, 180),
+      part: q.part ?? null,
+      target: String(q.target || '').slice(0, 160),
+      ActionCount: q.ActionCount,
+      repeatable: !!q.repeatable,
+      cooldown: q.cooldown,
+      rewards: Array.isArray(q.rewards) ? q.rewards.slice(0, 8) : []
+    })) : []
+  };
+}
+
 function parseAiJson(text = '') {
   try { return JSON.parse(text); } catch {}
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
@@ -77,6 +108,7 @@ app.post('/api/ai/quest-text', async (req, res) => {
   const config = await loadAiBrainConfig();
   if ((config.provider || 'openai') !== 'openai') return res.status(400).json({ error: `Unsupported AI provider: ${config.provider}` });
   const quest = sanitizeQuestForAi(req.body?.quest || {});
+  const questContext = sanitizeQuestContextForAi(req.body?.questContext || {});
   const brief = String(req.body?.brief || '').slice(0, 2000);
   const mode = String(req.body?.mode || 'rewrite').slice(0, 80);
   const body = {
@@ -85,7 +117,7 @@ app.post('/api/ai/quest-text', async (req, res) => {
     max_tokens: Number.isFinite(Number(config.maxOutputTokens)) ? Number(config.maxOutputTokens) : 700,
     messages: [
       { role: 'system', content: String(config.systemInstruction || '') },
-      { role: 'user', content: JSON.stringify({ task: mode, userBrief: brief, instruction: config.userInstruction, outputShape: config.outputShape, quest }, null, 2) }
+      { role: 'user', content: JSON.stringify({ task: mode, userBrief: brief, instruction: config.userInstruction, outputShape: config.outputShape, quest, questContext }, null, 2) }
     ],
     response_format: { type: 'json_object' }
   };

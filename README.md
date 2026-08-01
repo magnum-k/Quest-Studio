@@ -200,7 +200,7 @@ ai-brain.config.json
 
 Use that file to change tone, model, temperature, and instructions for your server/community. The default prompt is aimed at Rust/XDQuest text: concise, clear, a bit dry/funny, and preserving XDQuest rich-text tags.
 
-When AI Brain is used, the local server sends a compact copy of the current quest fields/rewards plus your instruction text to OpenAI. It does not send your whole browser autosave, map layout, local backups, or downloaded files.
+When AI Brain is used, the local server sends the selected quest plus compact Quest.json context from the uploaded browser file: total quest/link counts, group counts, and up to 28 related quest summaries from the same graph neighborhood/series/group/permission/reward context. It does not send your whole browser autosave, map layout, local backups, or downloaded files.
 
 ## Steam Workshop previews and API keys
 

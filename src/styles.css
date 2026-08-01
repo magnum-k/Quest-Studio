@@ -759,6 +759,8 @@ header, .tabs, .toolbar { flex: 0 0 auto; }
 .aiStatus { flex: 0 0 auto; border-radius: 999px; padding: 6px 10px; font-size: 11px; font-weight: 950; border: 1px solid rgba(148,163,184,.22); }
 .aiStatus.ok { color: #bbf7d0; background: rgba(22,101,52,.22); border-color: rgba(74,222,128,.32); }
 .aiStatus.warn { color: #fde68a; background: rgba(120,53,15,.22); border-color: rgba(251,191,36,.32); }
+.aiContextPills { display: flex; flex-wrap: wrap; gap: 7px; }
+.aiContextPills span { border: 1px solid rgba(125,211,252,.20); background: rgba(14,116,144,.14); color: #bae6fd; border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 850; }
 .aiBrainActions { display: flex; flex-wrap: wrap; gap: 10px; }
 .aiBrainNote, .aiBrainError { margin: 0; border-radius: 14px; padding: 10px 12px; line-height: 1.45; }
 .aiBrainNote { color: #fef3c7; background: rgba(120,53,15,.18); border: 1px solid rgba(251,191,36,.24); }
