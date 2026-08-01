@@ -6,8 +6,13 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.1';
+const APP_VERSION = 'v1.1.0-beta.2';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.2', date: '2026-08-01', items: [
+    'Locked the main app viewport so the browser/page scrollbar is gone; graph, inspector, list, validation, and modal areas keep their own internal scrolling.',
+    'Moved the graph edge legend higher and added a minimize/show button.',
+    'Made the reset/zoom/graph controls dock stand out more with stronger contrast, border, and primary reset/center buttons.'
+  ] },
   { version: 'v1.1.0-beta.1', date: '2026-08-01', items: [
     'Beta branch: added sidequest creation from any graph quest, including automatic permission reward wiring from source quest to new sidequest.',
     'Added a separated full in-game style quest preview panel in the fullscreen editor so preview and edit fields are easier to compare.',
@@ -614,6 +619,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   const [connectMode, setConnectMode] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [selectedEdge, setSelectedEdge] = useState(null);
+  const [legendCollapsed, setLegendCollapsed] = useState(false);
   const searchText = query.trim().toLowerCase();
   const nodeMatchesSearch = (n) => !searchText || (n.title + ' ' + n.id + ' ' + JSON.stringify(n.quest)).toLowerCase().includes(searchText);
   const baseNodes = graph.nodes.filter(n => !groupFilter || n.group === groupFilter);
@@ -835,7 +841,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   }
   return <div ref={shellRef} className={`mapShell ${nodeDrag.current ? 'movingNode' : ''}`} onMouseDown={onBackgroundDown} onMouseMove={onMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}>
     <div className="mapControls"><button onClick={resetScroll}>Reset view</button><button onClick={centerSelected}>Center selected</button><button onClick={()=>zoomBy(-.1)}>−</button><span>{Math.round(zoom*100)}%</span><button onClick={()=>zoomBy(.1)}>+</button><button className={manualMode?'active':''} onClick={()=>setManualMode(!manualMode)}>Move nodes</button><button onClick={lineUpSelected}>Line up selected</button><button onClick={applyGridOrder}>Apply grid order</button><button className={connectMode?'active':''} onClick={()=>{setConnectMode(!connectMode);setConnectFrom(null);}}>Connect quests</button><button onClick={clearManual}>Clear manual</button><span>{links.length} quest links ({manualLinks.length} manual) · {crossQuestUnlocks.length} cross-quest unlocks</span>{connectFrom && <span>Choose target for #{connectFrom}</span>}</div>
-    <aside className="edgeLegend" aria-label="Graph edge legend"><b>Edge legend</b><span><i className="normal"></i><em>Name/part chain<small>— Auto: Part 1 → Part 2</small></em></span><span><i className="permission"></i><em>Permission-name match<small>— Fallback by QuestPermission name</small></em></span><span><i className="permissionGrant"></i><em>Reward grants permission<small>— PrizeCommand unlocks target</small></em></span><span><i className="unlock"></i><em>Cross-quest unlock<small>— Grant into another questline</small></em></span><span><i className="manual"></i><em>Manual link<small>— Added by you</small></em></span><span><i className="loop"></i><em>Loop/back edge<small>— Returns to earlier quest</small></em></span></aside>
+    <aside className={`edgeLegend ${legendCollapsed ? 'collapsed' : ''}`} aria-label="Graph edge legend"><div className="edgeLegendHead"><b>Edge legend</b><button type="button" onClick={()=>setLegendCollapsed(v=>!v)} aria-label={legendCollapsed ? 'Show edge legend' : 'Hide edge legend'}>{legendCollapsed ? '+' : '−'}</button></div>{!legendCollapsed && <><span><i className="normal"></i><em>Name/part chain<small>— Auto: Part 1 → Part 2</small></em></span><span><i className="permission"></i><em>Permission-name match<small>— Fallback by QuestPermission name</small></em></span><span><i className="permissionGrant"></i><em>Reward grants permission<small>— PrizeCommand unlocks target</small></em></span><span><i className="unlock"></i><em>Cross-quest unlock<small>— Grant into another questline</small></em></span><span><i className="manual"></i><em>Manual link<small>— Added by you</small></em></span><span><i className="loop"></i><em>Loop/back edge<small>— Returns to earlier quest</small></em></span></>}</aside>
     {selectedEdgeDetail ? <aside className="edgeDetail" aria-label="Selected edge details"><div><b>{selectedEdgeDetail.label}</b><button onClick={()=>setSelectedEdge(null)}>×</button></div><small>{selectedEdgeDetail.strength}</small><p>{selectedEdgeDetail.why}</p><dl><dt>From</dt><dd>#{selectedEdgeDetail.link.source} · {edgeQuestTitle(selectedEdgeDetail.sourceNode)}</dd><dt>To</dt><dd>#{selectedEdgeDetail.link.target} · {edgeQuestTitle(selectedEdgeDetail.targetNode)}</dd>{selectedEdgeDetail.permission ? <><dt>Target requires</dt><dd><code>{selectedEdgeDetail.permission}</code></dd></> : null}{selectedEdgeDetail.grantCommand ? <><dt>Source reward command</dt><dd><code>{selectedEdgeDetail.grantCommand}</code></dd></> : null}<dt>Internal reason</dt><dd><code>{selectedEdgeDetail.link.reason || 'manual'}</code></dd></dl></aside> : null}
     <div className="graphCanvasWrap" style={{ width: width*zoom, height: height*zoom }}><div className="graphCanvas" style={{ width, height, transform:`scale(${zoom})` }}>
       <svg className="wires" width={width} height={height}>
