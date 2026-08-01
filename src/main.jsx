@@ -6,8 +6,13 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.3';
+const APP_VERSION = 'v1.1.0-beta.4';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.4', date: '2026-08-01', items: [
+    'Remembered graph scroll position when switching from Graph to Changelog/List/etc. and back.',
+    'Changed generated sidequest unlock rewards to use o.grant user %STEAMID% <permission> instead of grantperm.',
+    'Added a one-click Line up all button for visible graph quests.'
+  ] },
   { version: 'v1.1.0-beta.3', date: '2026-08-01', items: [
     'Moved zoom controls out of the bottom graph dock into a separate top-center grid control.',
     'Persisted graph zoom with the local map state so reload keeps the chosen zoom level.',
@@ -580,6 +585,7 @@ function uniquePermission(base, existing = []) {
 }
 
 function permissionGrantReward(permission) {
+  const grantPermission = String(permission || '').startsWith('XDQuest.') ? permission : `XDQuest.${permission}`;
   return {
     PrizeName: 'Unlock sidequest',
     PrizeType: 3,
@@ -588,7 +594,7 @@ function permissionGrantReward(permission) {
     ItemName: '',
     CustomItemName: '',
     ItemSkinID: 0,
-    PrizeCommand: `grantperm %STEAMID% XDQuest.${permission} 20d`,
+    PrizeCommand: `o.grant user %STEAMID% ${grantPermission}`,
     CommandImageUrl: '',
     IsHidden: true
   };
@@ -619,6 +625,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   const drag = useRef(null);
   const nodeDrag = useRef(null);
   const dragFrame = useRef(null);
+  const scrollFrame = useRef(null);
   const [connectFrom, setConnectFrom] = useState(null);
   const [manualMode, setManualMode] = useState(false);
   const [connectMode, setConnectMode] = useState(false);
@@ -734,6 +741,25 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   const selectedEdgeDetail = edgeDetail(selectedEdge);
 
   function updateMap(updater){ setManualMap(m => typeof updater === 'function' ? updater(m) : updater); }
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const saved = manualMap.scroll || {};
+    const frame = requestAnimationFrame(() => {
+      shell.scrollLeft = Math.max(0, Number(saved.left) || 0);
+      shell.scrollTop = Math.max(0, Number(saved.top) || 0);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  function rememberScroll(){
+    const shell = shellRef.current;
+    if (!shell || scrollFrame.current) return;
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null;
+      const next = { left: Math.round(shell.scrollLeft), top: Math.round(shell.scrollTop) };
+      updateMap(m => (m.scroll?.left === next.left && m.scroll?.top === next.top) ? m : { ...m, scroll: next });
+    });
+  }
   function localPoint(e){ const shell=shellRef.current; const r=shell.getBoundingClientRect(); return { x: ((e.clientX-r.left)+shell.scrollLeft)/zoom, y: ((e.clientY-r.top)+shell.scrollTop)/zoom }; }
   function onBackgroundDown(e){ if(connectMode || e.button!==0 || e.target.closest('button,input,select,textarea,a,.node,.mapControls,.zoomControls,.edgeLegend,.edgeDetail')) return; drag.current={sx:e.clientX,sy:e.clientY,left:shellRef.current?.scrollLeft || 0,top:shellRef.current?.scrollTop || 0}; }
   function onMove(e){
@@ -775,9 +801,9 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   function nodePointerDown(e,n){ if(!manualMode) return; e.preventDefault(); e.stopPropagation(); const p=positions.get(n.id); const pt=localPoint(e); nodeDrag.current={id:n.id,dx:pt.x-p.x,dy:pt.y-p.y}; }
   function nodeClick(e,n){ e.stopPropagation(); if(connectMode){ if(!connectFrom){ setConnectFrom(n.id); return; } if(connectFrom!==n.id){ updateMap(m=>{ const links=m.links||[]; const exists=links.some(l=>String(l.source)===String(connectFrom)&&String(l.target)===String(n.id)); return exists?m:{...m,links:[...links,{source:connectFrom,target:n.id}]}; }); } setConnectFrom(null); return; } setSelected(n.quest); }
   function clearManual(){ if(confirm('Clear manual positions and links for this file?')) updateMap(m => ({...m,positions:{},links:[]})); }
-  function resetScroll(){ if(shellRef.current){ shellRef.current.scrollLeft=0; shellRef.current.scrollTop=0; } }
+  function resetScroll(){ if(shellRef.current){ shellRef.current.scrollLeft=0; shellRef.current.scrollTop=0; updateMap(m => ({ ...m, scroll: { left: 0, top: 0 } })); } }
   function zoomBy(delta){ updateMap(m => ({ ...m, zoom: Math.max(.55, Math.min(1.6, Number(((Number(m.zoom) || zoom) + delta).toFixed(2)))) })); }
-  function centerPoint(p){ if(shellRef.current && p){ shellRef.current.scrollLeft=Math.max(0,p.x*zoom-220); shellRef.current.scrollTop=Math.max(0,p.y*zoom-160); } }
+  function centerPoint(p){ if(shellRef.current && p){ const left=Math.max(0,p.x*zoom-220), top=Math.max(0,p.y*zoom-160); shellRef.current.scrollLeft=left; shellRef.current.scrollTop=top; updateMap(m => ({ ...m, scroll: { left: Math.round(left), top: Math.round(top) } })); } }
   function centerOn(n){ const p=positions.get(n.id); centerPoint(p); if(n?.quest) setSelected(n.quest); }
   function centerSelected(){
     if (!selected) { alert('Select a quest first.'); return; }
@@ -834,6 +860,26 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
     updateMap(m => ({...m, positions: {...(m.positions||{}), ...nextPositions}}));
     centerPoint(nextPositions[selectedId]);
   }
+  function lineUpAll(){
+    if (!filteredNodes.length) return;
+    const nextPositions = {};
+    const lined = new Set();
+    rows.forEach((row, rowIndex) => {
+      const startId = row.nodes[0]?.id;
+      const ordered = (startId ? connectedLineFrom(startId) : row.nodes).filter(n => row.nodes.some(r => r.id === n.id));
+      const nodes = ordered.length ? ordered : row.nodes;
+      nodes.forEach((n, col) => {
+        lined.add(n.id);
+        nextPositions[n.id] = clampPosition({ x: 92 + col * colWidth, y: 82 + rowIndex * rowHeight });
+      });
+      row.nodes.filter(n => !lined.has(n.id)).forEach((n, extra) => {
+        nextPositions[n.id] = clampPosition({ x: 92 + (nodes.length + extra) * colWidth, y: 82 + rowIndex * rowHeight });
+      });
+    });
+    updateMap(m => ({...m, positions: {...(m.positions||{}), ...nextPositions}}));
+    if (selectedNode && nextPositions[selectedNode.id]) centerPoint(nextPositions[selectedNode.id]);
+    else resetScroll();
+  }
   function applyGridOrder(){
     if (searchText || groupFilter) { alert('Clear search and group filter before applying the grid order to Quest.json. This prevents exporting a partial/filtered order by mistake.'); return; }
     const orderedIds = filteredNodes
@@ -844,8 +890,8 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
     if (!confirm(`Apply the current grid/map order to the Quest.json object order?\n\nThis changes only the order of quest entries in the exported JSON, not quest fields or rewards.`)) return;
     onApplyGridOrder?.(orderedIds);
   }
-  return <div ref={shellRef} className={`mapShell ${nodeDrag.current ? 'movingNode' : ''}`} onMouseDown={onBackgroundDown} onMouseMove={onMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}>
-    <div className="mapControls"><button onClick={resetScroll}>Reset view</button><button onClick={centerSelected}>Center selected</button><button className={manualMode?'active':''} onClick={()=>setManualMode(!manualMode)}>Move nodes</button><button onClick={lineUpSelected}>Line up selected</button><button onClick={applyGridOrder}>Apply grid order</button><button className={connectMode?'active':''} onClick={()=>{setConnectMode(!connectMode);setConnectFrom(null);}}>Connect quests</button><button onClick={clearManual}>Clear manual</button><span>{links.length} quest links ({manualLinks.length} manual) · {crossQuestUnlocks.length} cross-quest unlocks</span>{connectFrom && <span>Choose target for #{connectFrom}</span>}</div>
+  return <div ref={shellRef} className={`mapShell ${nodeDrag.current ? 'movingNode' : ''}`} onScroll={rememberScroll} onMouseDown={onBackgroundDown} onMouseMove={onMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}>
+    <div className="mapControls"><button onClick={resetScroll}>Reset view</button><button onClick={centerSelected}>Center selected</button><button className={manualMode?'active':''} onClick={()=>setManualMode(!manualMode)}>Move nodes</button><button onClick={lineUpSelected}>Line up selected</button><button onClick={lineUpAll}>Line up all</button><button onClick={applyGridOrder}>Apply grid order</button><button className={connectMode?'active':''} onClick={()=>{setConnectMode(!connectMode);setConnectFrom(null);}}>Connect quests</button><button onClick={clearManual}>Clear manual</button><span>{links.length} quest links ({manualLinks.length} manual) · {crossQuestUnlocks.length} cross-quest unlocks</span>{connectFrom && <span>Choose target for #{connectFrom}</span>}</div>
     <div className="zoomControls" aria-label="Graph zoom controls"><button onClick={()=>zoomBy(-.1)}>−</button><strong>{Math.round(zoom*100)}%</strong><button onClick={()=>zoomBy(.1)}>+</button></div>
     <aside className={`edgeLegend ${legendCollapsed ? 'collapsed' : ''}`} aria-label="Graph edge legend"><div className="edgeLegendHead"><b>Edge legend</b><button type="button" onClick={()=>setLegendCollapsed(v=>!v)} aria-label={legendCollapsed ? 'Show edge legend' : 'Hide edge legend'}>{legendCollapsed ? '+' : '−'}</button></div>{!legendCollapsed && <><span><i className="normal"></i><em>Name/part chain<small>— Auto: Part 1 → Part 2</small></em></span><span><i className="permission"></i><em>Permission-name match<small>— Fallback by QuestPermission name</small></em></span><span><i className="permissionGrant"></i><em>Reward grants permission<small>— PrizeCommand unlocks target</small></em></span><span><i className="unlock"></i><em>Cross-quest unlock<small>— Grant into another questline</small></em></span><span><i className="manual"></i><em>Manual link<small>— Added by you</small></em></span><span><i className="loop"></i><em>Loop/back edge<small>— Returns to earlier quest</small></em></span></>}</aside>
     {selectedEdgeDetail ? <aside className="edgeDetail" aria-label="Selected edge details"><div><b>{selectedEdgeDetail.label}</b><button onClick={()=>setSelectedEdge(null)}>×</button></div><small>{selectedEdgeDetail.strength}</small><p>{selectedEdgeDetail.why}</p><dl><dt>From</dt><dd>#{selectedEdgeDetail.link.source} · {edgeQuestTitle(selectedEdgeDetail.sourceNode)}</dd><dt>To</dt><dd>#{selectedEdgeDetail.link.target} · {edgeQuestTitle(selectedEdgeDetail.targetNode)}</dd>{selectedEdgeDetail.permission ? <><dt>Target requires</dt><dd><code>{selectedEdgeDetail.permission}</code></dd></> : null}{selectedEdgeDetail.grantCommand ? <><dt>Source reward command</dt><dd><code>{selectedEdgeDetail.grantCommand}</code></dd></> : null}<dt>Internal reason</dt><dd><code>{selectedEdgeDetail.link.reason || 'manual'}</code></dd></dl></aside> : null}
