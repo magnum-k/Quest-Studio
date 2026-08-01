@@ -6,8 +6,13 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.5';
+const APP_VERSION = 'v1.1.0-beta.6';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.6', date: '2026-08-01', items: [
+    'Saved fullscreen quest edits to browser autosave before rebuilding the graph, so a render crash cannot lose the edited QuestDisplayName.',
+    'Added an app-level recovery screen for unexpected render errors instead of leaving a blank page.',
+    'Added a crash marker in browser storage to help diagnose any remaining save-time render failures.'
+  ] },
   { version: 'v1.1.0-beta.5', date: '2026-08-01', items: [
     'Prevented malformed or in-progress QuestDisplayName color/title markup from blanking the editor while typing.',
     'Kept fullscreen quest edit fields savable even if the live preview or derived series label cannot parse temporary markup.',
@@ -363,6 +368,19 @@ class SoftRenderBoundary extends React.Component {
   static getDerivedStateFromError(error) { return { error }; }
   componentDidUpdate(prevProps) { if (this.state.error && prevProps.resetKey !== this.props.resetKey) this.setState({ error: null }); }
   render() { return this.state.error ? (this.props.fallback || <div className="softError">Preview unavailable while this draft is being edited.</div>) : this.props.children; }
+}
+
+class AppCrashBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) {
+    try { localStorage.setItem('quest-json-editor:last-crash', JSON.stringify({ message: String(error?.message || error), stack: String(error?.stack || ''), componentStack: String(info?.componentStack || ''), at: new Date().toISOString() })); }
+    catch {}
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return <main className="crashRecovery"><section><h1>Quest Studio {APP_VERSION}</h1><h2>Editor recovered from a render crash</h2><p>Your latest browser autosave is still stored locally. Reload should restore it; if this happened right after Save quest, the edit was written before the graph rebuilt.</p><code>{String(this.state.error?.message || this.state.error)}</code><div><button className="primary" onClick={() => location.reload()}>Reload editor</button><button onClick={() => { localStorage.removeItem(autosaveKey); location.reload(); }}>Clear autosave and reload</button></div></section></main>;
+  }
 }
 
 function TaggedText({ value, className = '' }) {
@@ -1108,6 +1126,20 @@ function App() {
     localStorage.setItem(autosaveKey, JSON.stringify({ quests, baselineQuests, fileName, sourceBaseName, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, undoStack: undoStack.slice(0, 20), savedAt, downloadedAt: lastDownloadedAt, lastDownloadedKey }));
     setLastSavedAt(savedAt);
   }, [quests, baselineQuests, fileName, sourceBaseName, manualMap, selected?.QuestID, activeTab, query, groupFilter, compactMode, titleOnlyMode, undoStack, lastDownloadedAt, lastDownloadedKey]);
+  function persistAutosaveNow(overrides = {}){
+    const next = {
+      quests, baselineQuests, fileName, sourceBaseName, manualMap,
+      selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter,
+      compactMode, titleOnlyMode, undoStack: undoStack.slice(0, 20),
+      savedAt: new Date().toISOString(), downloadedAt: lastDownloadedAt, lastDownloadedKey,
+      ...overrides
+    };
+    if (next.quests?.length && next.fileName && next.fileName !== 'no file loaded') {
+      localStorage.setItem(autosaveKey, JSON.stringify(next));
+      setLastSavedAt(next.savedAt);
+    }
+    return next;
+  }
   async function loadText(text,name){ const parsed=JSON.parse(text); if(!Array.isArray(parsed)) throw new Error('Quest.json must be an array of quest objects'); setQuests(parsed); setBaselineQuests(parsed); setFileName(name); setSourceBaseName(baseNameFromFile(name)); setSelected(parsed[0]||null); setGroupFilter(''); setActiveTab('graph'); setUndoStack([]); try{ setManualMap(JSON.parse(localStorage.getItem(mapKey(name)) || '{"positions":{},"links":[]}')); }catch{ setManualMap({positions:{},links:[]}); } }
   async function onFile(e){ const file=e.target.files?.[0]; if(!file)return; try{ await loadText(await file.text(),file.name); }catch(err){ alert('JSON error: '+err.message); } }
   function refreshGraphView(){ setGraphRevision(v => v + 1); }
@@ -1150,7 +1182,15 @@ function App() {
   function focusQuestInGraph(q){ setSelected(q); setActiveTab('graph'); setGraphFocusRequest(v => v + 1); }
   function openQuestInspector(q){ if (!q) return; setSelected(q); setEditing(null); }
   function searchRelated(text){ setQuery(text || ''); setGroupFilter(''); setActiveTab('list'); }
-  function saveQuest(q){ pushUndo(`Save quest #${q.QuestID}`); setQuests(list=>list.some(x=>x.QuestID===q.QuestID)?list.map(x=>x.QuestID===q.QuestID?q:x):[...list,q]); setSelected(q); setEditing(null); refreshGraphView(); }
+  function saveQuest(q){
+    pushUndo(`Save quest #${q.QuestID}`);
+    const nextQuests = quests.some(x=>String(x.QuestID)===String(q.QuestID)) ? quests.map(x=>String(x.QuestID)===String(q.QuestID)?q:x) : [...quests,q];
+    persistAutosaveNow({ quests: nextQuests, selectedId: q.QuestID ?? null });
+    setQuests(nextQuests);
+    setSelected(q);
+    setEditing(null);
+    refreshGraphView();
+  }
   function patchQuest(q){ pushUndo(`Edit quest #${q.QuestID}`); setQuests(list=>list.map(x=>x.QuestID===q.QuestID?q:x)); setSelected(q); refreshGraphView(); }
   function createNew(){ setEditing(newQuestTemplate(quests)); }
   function createNextQuest(prev){ pushUndo(`Create next quest after #${prev.QuestID}`); const q=nextQuestFrom(prev, quests); setQuests(list=>[...list,q]); setSelected(q); setEditing(q); const prevId=String(prev.QuestID), nextId=String(q.QuestID); setManualMap(m=>({...m,links:[...(m.links||[]),{source:prevId,target:nextId}]})); refreshGraphView(); }
@@ -1229,4 +1269,4 @@ function App() {
     <div className="layout"><section className="mainPanel">{workspace}</section><QuestInspector quest={selected} baselineQuest={selected?.QuestID == null ? null : baselineById.get(String(selected.QuestID))} steamItems={steamItems} issues={issues} onPatch={patchQuest} onAdvanced={()=>selected && setEditing(selected)} /></div>{editing&&<EditorModal quest={editing} steamItems={steamItems} onClose={()=>setEditing(null)} onSave={saveQuest}/>} {showSaveInfo&&<SaveInfoOverlay fileName={fileName} sourceBaseName={sourceBaseName} savedAt={lastSavedAt} backups={localBackups} onCreateBackup={createLocalBackup} onRestoreBackup={restoreLocalBackup} onClose={()=>setShowSaveInfo(false)}/>}</main>;
 }
 
-createRoot(document.getElementById('root')).render(<App/>);
+createRoot(document.getElementById('root')).render(<AppCrashBoundary><App/></AppCrashBoundary>);
