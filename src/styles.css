@@ -751,6 +751,23 @@ header, .tabs, .toolbar { flex: 0 0 auto; }
 .previewRewards>div { display: grid; grid-template-columns: 54px minmax(0,1fr); gap: 10px; align-items: center; border: 1px solid rgba(148,163,184,.15); background: rgba(15,23,42,.46); border-radius: 16px; padding: 8px; }
 .previewRewards img, .previewRewards>div>span { width: 54px; height: 42px; border-radius: 12px; object-fit: cover; background: #0f172a; display: grid; place-items: center; color: #67e8f9; font-weight: 950; }
 .previewRewards strong, .previewRewards small, .questGamePreview strong, .questGamePreview small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.aiBrainPanel { display: grid; gap: 12px; border-color: rgba(167, 139, 250, .30); background: radial-gradient(circle at 92% 0%, rgba(139,92,246,.18), transparent 35%), rgba(11, 18, 32, .82); }
+.aiBrainPanel h3 { margin: 0; }
+.aiBrainPanel code { color: #bae6fd; background: rgba(15,23,42,.74); border: 1px solid rgba(125,211,252,.20); border-radius: 8px; padding: 1px 5px; }
+.aiBrainHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.aiBrainHead small { color: #c4b5fd; text-transform: uppercase; letter-spacing: .08em; font-size: 11px; font-weight: 950; }
+.aiStatus { flex: 0 0 auto; border-radius: 999px; padding: 6px 10px; font-size: 11px; font-weight: 950; border: 1px solid rgba(148,163,184,.22); }
+.aiStatus.ok { color: #bbf7d0; background: rgba(22,101,52,.22); border-color: rgba(74,222,128,.32); }
+.aiStatus.warn { color: #fde68a; background: rgba(120,53,15,.22); border-color: rgba(251,191,36,.32); }
+.aiBrainActions { display: flex; flex-wrap: wrap; gap: 10px; }
+.aiBrainNote, .aiBrainError { margin: 0; border-radius: 14px; padding: 10px 12px; line-height: 1.45; }
+.aiBrainNote { color: #fef3c7; background: rgba(120,53,15,.18); border: 1px solid rgba(251,191,36,.24); }
+.aiBrainError { color: #fecdd3; background: rgba(127,29,29,.24); border: 1px solid rgba(248,113,113,.30); }
+.aiSuggestion { display: grid; gap: 10px; border-top: 1px solid rgba(148,163,184,.16); padding-top: 12px; }
+.aiSuggestion>b { color: #ddd6fe; }
+.aiSuggestion label { display: grid; gap: 5px; }
+.aiSuggestion span { color: #9eeefb; font-size: 11px; font-weight: 900; }
+.aiSuggestion textarea { opacity: .92; }
 .softError {
   border: 1px solid rgba(248, 113, 113, .34);
   border-radius: 22px;

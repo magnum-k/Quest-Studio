@@ -6,8 +6,13 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.7';
+const APP_VERSION = 'v1.1.0-beta.8';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.8', date: '2026-08-01', items: [
+    'Added an optional AI Brain panel in fullscreen quest editing for generating QuestDisplayName, QuestDescription, and QuestMissions suggestions.',
+    'Added a local server OpenAI endpoint that reads OPENAI_API_KEY from .env so the token never goes into the browser bundle.',
+    'Added ai-brain.config.json so server owners can edit the AI tone/instructions/model without changing app code.'
+  ] },
   { version: 'v1.1.0-beta.7', date: '2026-08-01', items: [
     'Fixed localStorage quota crashes by falling back to a compact autosave that keeps edited Quest.json data even when undo/baseline history is too large.',
     'Autosave now records when it had to compact browser storage instead of throwing a render-crashing quota error.',
@@ -619,9 +624,61 @@ function QuestGamePreview({ quest, steamItems = {} }) {
   </aside>;
 }
 
+function AiBrainPanel({ draft, onApply }) {
+  const [status, setStatus] = useState(null);
+  const [brief, setBrief] = useState('Rewrite this quest text so it feels clearer, more server-aware, and less placeholder.');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [suggestion, setSuggestion] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/ai/status')
+      .then(r => r.json())
+      .then(data => { if (alive) setStatus(data); })
+      .catch(err => { if (alive) setStatus({ enabled: false, error: err.message }); });
+    return () => { alive = false; };
+  }, []);
+  async function generate() {
+    setLoading(true);
+    setError('');
+    setSuggestion(null);
+    try {
+      const response = await fetch('/api/ai/quest-text', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'generate-quest-text', brief, quest: draft })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `AI request failed (${response.status})`);
+      setSuggestion(data.suggestion);
+      setStatus(s => ({ ...(s || {}), enabled: true, provider: data.provider, model: data.model }));
+    } catch (err) {
+      setError(err.message || 'AI request failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+  const enabled = !!status?.enabled;
+  return <section className="formPanel aiBrainPanel">
+    <div className="aiBrainHead"><div><small>Optional AI Brain</small><h3>Generate quest text</h3></div><span className={enabled ? 'aiStatus ok' : 'aiStatus warn'}>{status ? (enabled ? `${status.provider || 'openai'} · ${status.model || 'model'}` : 'OPENAI_API_KEY missing') : 'Checking…'}</span></div>
+    <p className="muted">Uses the local Node server and <code>ai-brain.config.json</code>. Your OpenAI token stays in <code>.env</code>, not in the browser or exported Quest.json.</p>
+    <label className="field"><span>Instruction for this quest</span><textarea rows={3} value={brief} onChange={e => setBrief(e.target.value)} placeholder="Example: make it darker, funnier, shorter, boss-themed…" /></label>
+    <div className="aiBrainActions"><button type="button" className="primary" disabled={loading || !enabled} onClick={generate}>{loading ? 'Generating…' : 'Generate suggestion'}</button><button type="button" disabled={!suggestion} onClick={() => onApply(suggestion)}>Apply to draft</button></div>
+    {!enabled ? <p className="aiBrainNote">To test OpenAI: copy <code>.env.example</code> to <code>.env</code>, set <code>OPENAI_API_KEY</code>, then restart <code>npm start</code>. No token needed yet for layout testing.</p> : null}
+    {error ? <div className="aiBrainError">{error}</div> : null}
+    {suggestion ? <div className="aiSuggestion"><b>Suggestion preview</b><label><span>QuestDisplayName</span><textarea readOnly rows={2} value={suggestion.QuestDisplayName || ''} /></label><label><span>QuestDescription</span><textarea readOnly rows={5} value={suggestion.QuestDescription || ''} /></label><label><span>QuestMissions</span><textarea readOnly rows={2} value={suggestion.QuestMissions || ''} /></label></div> : null}
+  </section>;
+}
+
 function EditorModal({ quest, onClose, onSave, steamItems }) {
   const [draft, setDraft] = useState(() => structuredClone(quest));
   const set = (key, value) => setDraft(d => ({ ...d, [key]: value }));
+  const applyAiSuggestion = (suggestion = {}) => setDraft(d => ({
+    ...d,
+    QuestDisplayName: suggestion.QuestDisplayName ?? d.QuestDisplayName,
+    QuestDescription: suggestion.QuestDescription ?? d.QuestDescription,
+    QuestMissions: suggestion.QuestMissions ?? d.QuestMissions
+  }));
   const series = safeQuestSeriesKey(draft);
   const part = safePartNumber(draft);
   const resetKey = `${draft?.QuestID || ''}:${draft?.QuestDisplayName || ''}:${draft?.QuestMissions || ''}:${draft?.QuestDescription || ''}`;
@@ -636,6 +693,7 @@ function EditorModal({ quest, onClose, onSave, steamItems }) {
           <div className="three"><QuestTypeField value={draft.QuestType} onChange={v => set('QuestType', v)} /><Field label="Target / skin id / target" value={draft.Target} onChange={v => set('Target', v)} /><Field label="ActionCount" type="number" value={draft.ActionCount} onChange={v => set('ActionCount', v)} /></div>
           <div className="three"><Field label="Cooldown" type="number" value={draft.Cooldown} onChange={v => set('Cooldown', v)} /><BoolField label="Repeatable" value={draft.IsRepeatable} onChange={v => set('IsRepeatable', v)} /><BoolField label="Return items required" value={draft.IsReturnItemsRequired} onChange={v => set('IsReturnItemsRequired', v)} /></div>
         </section>
+        <AiBrainPanel draft={draft} onApply={applyAiSuggestion} />
         <section className="formPanel questRewardsPanel"><RewardEditor rewards={draft.PrizeList || []} steamItems={steamItems} onChange={v => set('PrizeList', v)} /></section>
       </div>
       <div className="questPreviewWorkspace" aria-label="Quest preview">

@@ -13,6 +13,7 @@ This project is **not** the Quest System plugin itself. It does not replace the 
 - Opens XDQuest / Quest System style `Quest.json` files in your browser.
 - Shows a visual quest graph so questlines, permissions, unlocks, repeatable loops, and manual links are easier to understand.
 - Lets you inspect and edit quest fields, missions, permissions, descriptions, and rewards.
+- Optionally generates quest title/description/mission suggestions through a local AI Brain when you provide an OpenAI token in `.env`.
 - Helps find validation issues such as missing descriptions, reward problems, broken/weak links, and permission-chain problems.
 - Supports local autosave in the browser so you do not lose work if you refresh the page.
 - Exports/downloads a new `Quest.json` file when you are ready.
@@ -172,6 +173,35 @@ Quest Studio is made to help edit configuration files for the Codefling Quest Sy
 
 For plugin installation, server-side setup, permissions, commands, and where the config file belongs, use the official plugin documentation and Codefling page. This editor only helps with the JSON file.
 
+## Optional AI Brain for quest text
+
+Quest Studio can optionally call OpenAI from the local Node server to suggest improved quest text. This is meant as a writing helper, not an automatic exporter: suggestions are shown in the fullscreen quest editor and you must click **Apply to draft** before saving the quest.
+
+The API token is server-side only:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` locally:
+
+```text
+OPENAI_API_KEY=your-token-here
+OPENAI_MODEL=gpt-4o-mini
+```
+
+Do **not** commit `.env`. It is ignored by git.
+
+The AI writing rules are configurable in:
+
+```text
+ai-brain.config.json
+```
+
+Use that file to change tone, model, temperature, and instructions for your server/community. The default prompt is aimed at Rust/XDQuest text: concise, clear, a bit dry/funny, and preserving XDQuest rich-text tags.
+
+When AI Brain is used, the local server sends a compact copy of the current quest fields/rewards plus your instruction text to OpenAI. It does not send your whole browser autosave, map layout, local backups, or downloaded files.
+
 ## Steam Workshop previews and API keys
 
 The local server includes a small API route used for Steam Workshop item preview lookups:
@@ -209,7 +239,8 @@ Quest Studio has no hosted backend in this repository. Normal usage is local:
 - quest data stays in browser memory/localStorage
 - downloaded files are created by your browser
 - no account is required
-- no API key is required
+- no API key is required for normal editing
+- OpenAI is contacted only if you configure `OPENAI_API_KEY` and use the optional AI Brain
 - no database is used
 
 If you deploy this yourself to a public web host, remember that the static web app will run in each visitor's browser. You are responsible for that deployment and any server/proxy changes you add.

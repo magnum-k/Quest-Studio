@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -8,6 +9,110 @@ const app = express();
 const PORT = process.env.PORT || 4177;
 
 app.use(express.json({ limit: '20mb' }));
+
+async function loadAiBrainConfig() {
+  const defaults = {
+    provider: 'openai',
+    model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    temperature: 0.75,
+    maxOutputTokens: 700,
+    systemInstruction: 'You are a game quest writer for a Rust XDQuest server. Write concise, punchy quest text with dry humor, but do not be cruel. Preserve XDQuest rich text tags such as <color=yellow>...</color> when useful. Return strict JSON only.',
+    userInstruction: 'Generate improved quest title, description, and mission text for the provided quest. Keep the same quest mechanics, target, count, rewards, permission, repeatability, and part/questline intent. Do not invent unsupported rewards or requirements.',
+    outputShape: {
+      QuestDisplayName: 'string, may include XDQuest <color=#hex> tags',
+      QuestDescription: 'string, player-facing description',
+      QuestMissions: 'string, short objective text'
+    }
+  };
+  try {
+    const raw = await fs.readFile(path.join(__dirname, 'ai-brain.config.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    return { ...defaults, ...parsed, outputShape: { ...defaults.outputShape, ...(parsed.outputShape || {}) } };
+  } catch {
+    return defaults;
+  }
+}
+
+function sanitizeQuestForAi(q = {}) {
+  const rewards = Array.isArray(q.PrizeList) ? q.PrizeList.slice(0, 12).map((r) => ({
+    PrizeName: r.PrizeName || '',
+    PrizeType: r.PrizeType,
+    ItemAmount: r.ItemAmount,
+    ItemShortName: r.ItemShortName || '',
+    CustomItemName: r.CustomItemName || '',
+    PrizeCommand: r.PrizeCommand || '',
+    IsHidden: !!r.IsHidden
+  })) : [];
+  return {
+    QuestID: q.QuestID,
+    QuestDisplayName: q.QuestDisplayName || '',
+    QuestDescription: q.QuestDescription || '',
+    QuestMissions: q.QuestMissions || '',
+    QuestType: q.QuestType,
+    QuestPermission: q.QuestPermission || '',
+    Target: q.Target || '',
+    ActionCount: q.ActionCount,
+    IsRepeatable: !!q.IsRepeatable,
+    Cooldown: q.Cooldown,
+    rewards
+  };
+}
+
+function parseAiJson(text = '') {
+  try { return JSON.parse(text); } catch {}
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  if (fenced) { try { return JSON.parse(fenced); } catch {} }
+  const object = text.match(/\{[\s\S]*\}/)?.[0];
+  if (object) return JSON.parse(object);
+  throw new Error('AI response was not valid JSON');
+}
+
+app.get('/api/ai/status', async (req, res) => {
+  const config = await loadAiBrainConfig();
+  res.json({ enabled: !!process.env.OPENAI_API_KEY, provider: config.provider || 'openai', model: config.model, configFile: 'ai-brain.config.json' });
+});
+
+app.post('/api/ai/quest-text', async (req, res) => {
+  if (!process.env.OPENAI_API_KEY) return res.status(400).json({ error: 'OPENAI_API_KEY is not set on the local server. Copy .env.example to .env and add your token locally.' });
+  const config = await loadAiBrainConfig();
+  if ((config.provider || 'openai') !== 'openai') return res.status(400).json({ error: `Unsupported AI provider: ${config.provider}` });
+  const quest = sanitizeQuestForAi(req.body?.quest || {});
+  const brief = String(req.body?.brief || '').slice(0, 2000);
+  const mode = String(req.body?.mode || 'rewrite').slice(0, 80);
+  const body = {
+    model: config.model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    temperature: Number.isFinite(Number(config.temperature)) ? Number(config.temperature) : 0.75,
+    max_tokens: Number.isFinite(Number(config.maxOutputTokens)) ? Number(config.maxOutputTokens) : 700,
+    messages: [
+      { role: 'system', content: String(config.systemInstruction || '') },
+      { role: 'user', content: JSON.stringify({ task: mode, userBrief: brief, instruction: config.userInstruction, outputShape: config.outputShape, quest }, null, 2) }
+    ],
+    response_format: { type: 'json_object' }
+  };
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return res.status(response.status).json({ error: data?.error?.message || `OpenAI request failed (${response.status})` });
+    const content = data?.choices?.[0]?.message?.content || '';
+    const parsed = parseAiJson(content);
+    res.json({
+      provider: 'openai',
+      model: body.model,
+      suggestion: {
+        QuestDisplayName: String(parsed.QuestDisplayName || quest.QuestDisplayName || ''),
+        QuestDescription: String(parsed.QuestDescription || quest.QuestDescription || ''),
+        QuestMissions: String(parsed.QuestMissions || quest.QuestMissions || '')
+      },
+      raw: parsed
+    });
+  } catch (error) {
+    res.status(502).json({ error: error.message || 'AI request failed' });
+  }
+});
 
 app.get('/api/steam/workshop', async (req, res) => {
   const ids = String(req.query.ids || '')
