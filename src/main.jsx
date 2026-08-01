@@ -6,8 +6,11 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.0.16';
+const APP_VERSION = 'v1.0.17';
 const CHANGELOG = [
+  { version: 'v1.0.17', date: '2026-08-01', items: [
+    'Kept the graph navigation controls fixed in the viewport so Reset view, Center selected, zoom, and graph-mode actions remain visible while scrolling large maps.'
+  ] },
   { version: 'v1.0.16', date: '2026-07-31', items: [
     'Added an edge detail card: click a graph line to see why it exists, source/target quests, strength, reward command evidence, and required permission.',
     'Selected graph edges are now highlighted so line debugging is easier on large quest maps.'
