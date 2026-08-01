@@ -6,9 +6,9 @@ import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTempla
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.7';
+const APP_VERSION = 'v1.1.0';
 const CHANGELOG = [
-  { version: 'v1.1.0-beta.7', date: '2026-08-01', items: [
+  { version: 'v1.1.0', date: '2026-08-01', items: [
     'Fixed localStorage quota crashes by falling back to a compact autosave that keeps edited Quest.json data even when undo/baseline history is too large.',
     'Autosave now records when it had to compact browser storage instead of throwing a render-crashing quota error.',
     'Reduced save-time autosave payload size so changing title color hex codes cannot trip over accumulated undo snapshots.'
