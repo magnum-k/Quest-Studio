@@ -7,8 +7,12 @@ const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.13';
+const APP_VERSION = 'v1.1.0-beta.14';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.14', date: '2026-08-03', items: [
+    'Added the final 4M–6M XP badge batch to the local 512×512 badge library and Freeimage-backed export manifest.',
+    'Updated the XP badge reward picker so givexp commands include the required trailing true flag after the XP amount.'
+  ] },
   { version: 'v1.1.0-beta.13', date: '2026-08-03', items: [
     'Baked 39 XP badge assets into the beta app as local 512×512 previews with a manifest of public Freeimage URLs for exported Quest.json rewards.',
     'Added an XP badge quick-pick inside Command rewards that fills givexp %STEAMID% <amount>, label, amount marker, and public preview image URL.'
@@ -658,7 +662,7 @@ function AddRewardDialog({ onAdd, onClose, steamItems }) {
       ...d,
       PrizeName: badge.label,
       ItemAmount: badge.xp,
-      PrizeCommand: `givexp %STEAMID% ${badge.xp}`,
+      PrizeCommand: `givexp %STEAMID% ${badge.xp} true`,
       CommandImageUrl: badge.publicUrl || badge.localPath
     }));
   }
@@ -682,7 +686,7 @@ function AddRewardDialog({ onAdd, onClose, steamItems }) {
           <Field label="Command" value={draft.PrizeCommand} onChange={v => set('PrizeCommand', v)} textarea rows={3} />
           <div className="two"><Field label="Amount marker" type="number" value={draft.ItemAmount} onChange={v => set('ItemAmount', v)} /><Field label="Preview image URL" value={draft.CommandImageUrl} onChange={v => set('CommandImageUrl', v)} /></div>
           <div className="xpBadgePicker"><div className="sectionHead compact"><div><h4>XP badge quick-pick</h4><small>Uses local 512×512 previews here, but writes the public image URL for exported Quest.json.</small></div><span>{xpBadges.badges.length || 0} badges</span></div>
-            {xpBadges.loading ? <p className="muted">Loading XP badges…</p> : xpBadges.error ? <p className="error">XP badges could not load: {xpBadges.error}</p> : <div className="xpBadgeGrid">{xpBadges.badges.map(badge => <button type="button" key={badge.id} className={draft.PrizeCommand === `givexp %STEAMID% ${badge.xp}` ? 'active' : ''} onClick={() => pickXpBadge(badge)}><img src={badge.localPath} alt="" loading="lazy" /><span>{badge.label}</span></button>)}</div>}
+            {xpBadges.loading ? <p className="muted">Loading XP badges…</p> : xpBadges.error ? <p className="error">XP badges could not load: {xpBadges.error}</p> : <div className="xpBadgeGrid">{xpBadges.badges.map(badge => <button type="button" key={badge.id} className={draft.PrizeCommand === `givexp %STEAMID% ${badge.xp} true` ? 'active' : ''} onClick={() => pickXpBadge(badge)}><img src={badge.localPath} alt="" loading="lazy" /><span>{badge.label}</span></button>)}</div>}
           </div>
         </>}
         <BoolField label="Hidden reward" value={draft.IsHidden} onChange={v => set('IsHidden', v)} />
