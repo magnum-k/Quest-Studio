@@ -7,8 +7,11 @@ const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.14';
+const APP_VERSION = 'v1.1.0-beta.15';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.15', date: '2026-08-03', items: [
+    'Kept the selected graph quest anchored in the viewport when zooming in or out, so zoom no longer loses the current node.'
+  ] },
   { version: 'v1.1.0-beta.14', date: '2026-08-03', items: [
     'Added the final 4M–6M XP badge batch to the local 512×512 badge library and Freeimage-backed export manifest.',
     'Updated the XP badge reward picker so givexp commands include the required trailing true flag after the XP amount.'
@@ -955,6 +958,7 @@ function sideQuestFrom(parent, existing) {
 function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, manualMap, setManualMap, onCreateNext, onCreateSideQuest, onApplyGridOrder, issues = [], focusRequest = 0, compactMode = false, titleOnlyMode = false }) {
   const graph = useMemo(() => buildQuestGraph(quests), [quests]);
   const shellRef = useRef(null);
+  const canvasWrapRef = useRef(null);
   const drag = useRef(null);
   const nodeDrag = useRef(null);
   const dragFrame = useRef(null);
@@ -1135,8 +1139,66 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   function nodeClick(e,n){ e.stopPropagation(); if(connectMode){ if(!connectFrom){ setConnectFrom(n.id); return; } if(connectFrom!==n.id){ updateMap(m=>{ const links=m.links||[]; const exists=links.some(l=>String(l.source)===String(connectFrom)&&String(l.target)===String(n.id)); return exists?m:{...m,links:[...links,{source:connectFrom,target:n.id}]}; }); } setConnectFrom(null); return; } setSelected(n.quest); }
   function clearManual(){ if(confirm('Clear manual positions and links for this file?')) updateMap(m => ({...m,positions:{},links:[]})); }
   function resetScroll(){ if(shellRef.current){ shellRef.current.scrollLeft=0; shellRef.current.scrollTop=0; updateMap(m => ({ ...m, scroll: { left: 0, top: 0 } })); } }
-  function zoomBy(delta){ updateMap(m => ({ ...m, zoom: Math.max(.55, Math.min(1.6, Number(((Number(m.zoom) || zoom) + delta).toFixed(2)))) })); }
-  function centerPoint(p){ if(shellRef.current && p){ const left=Math.max(0,p.x*zoom-220), top=Math.max(0,p.y*zoom-160); shellRef.current.scrollLeft=left; shellRef.current.scrollTop=top; updateMap(m => ({ ...m, scroll: { left: Math.round(left), top: Math.round(top) } })); } }
+  function clampScrollForZoom(left, top, nextZoom){
+    const shell = shellRef.current;
+    if (!shell) return { left: Math.max(0, Math.round(left)), top: Math.max(0, Math.round(top)) };
+    const wrap = canvasWrapRef.current;
+    const maxLeft = Math.max(0, (wrap?.offsetLeft || 0) + width * nextZoom - shell.clientWidth);
+    const maxTop = Math.max(0, (wrap?.offsetTop || 0) + height * nextZoom - shell.clientHeight);
+    return {
+      left: Math.max(0, Math.min(Math.round(left), maxLeft)),
+      top: Math.max(0, Math.min(Math.round(top), maxTop))
+    };
+  }
+  function graphScrollFor(anchor, nextZoom, viewOffset){
+    const wrap = canvasWrapRef.current;
+    return clampScrollForZoom(
+      (wrap?.offsetLeft || 0) + anchor.x * nextZoom - viewOffset.x,
+      (wrap?.offsetTop || 0) + anchor.y * nextZoom - viewOffset.y,
+      nextZoom
+    );
+  }
+  function applyScroll(nextScroll, nextZoom = zoom){
+    const shell = shellRef.current;
+    if (!shell) return;
+    requestAnimationFrame(() => {
+      const clamped = clampScrollForZoom(nextScroll.left, nextScroll.top, nextZoom);
+      shell.scrollLeft = clamped.left;
+      shell.scrollTop = clamped.top;
+    });
+  }
+  function zoomBy(delta){
+    const currentZoom = zoom;
+    const nextZoom = Math.max(.55, Math.min(1.6, Number((currentZoom + delta).toFixed(2))));
+    if (nextZoom === currentZoom) return;
+    const shell = shellRef.current;
+    const wrap = canvasWrapRef.current;
+    const selectedPos = selectedNode ? positions.get(selectedNode.id) : null;
+    const anchor = selectedPos
+      ? { x: selectedPos.x + nodeWidth / 2, y: selectedPos.y + nodeHeight / 2 }
+      : shell
+        ? { x: (shell.scrollLeft + shell.clientWidth / 2 - (wrap?.offsetLeft || 0)) / currentZoom, y: (shell.scrollTop + shell.clientHeight / 2 - (wrap?.offsetTop || 0)) / currentZoom }
+        : { x: width / 2, y: height / 2 };
+    const currentViewOffset = shell
+      ? { x: (wrap?.offsetLeft || 0) + anchor.x * currentZoom - shell.scrollLeft, y: (wrap?.offsetTop || 0) + anchor.y * currentZoom - shell.scrollTop }
+      : { x: 220, y: 160 };
+    const selectedAnchorVisible = !!selectedPos && shell && currentViewOffset.x >= 0 && currentViewOffset.x <= shell.clientWidth && currentViewOffset.y >= 0 && currentViewOffset.y <= shell.clientHeight;
+    const viewOffset = shell && (!selectedPos || !selectedAnchorVisible)
+      ? { x: shell.clientWidth / 2, y: shell.clientHeight / 2 }
+      : currentViewOffset;
+    const nextScroll = graphScrollFor(anchor, nextZoom, viewOffset);
+    updateMap(m => ({ ...m, zoom: nextZoom, scroll: nextScroll }));
+    applyScroll(nextScroll, nextZoom);
+  }
+  function centerPoint(p){
+    if(shellRef.current && p){
+      const anchor = { x: p.x + nodeWidth / 2, y: p.y + nodeHeight / 2 };
+      const nextScroll = graphScrollFor(anchor, zoom, { x: shellRef.current.clientWidth / 2, y: shellRef.current.clientHeight / 2 });
+      shellRef.current.scrollLeft = nextScroll.left;
+      shellRef.current.scrollTop = nextScroll.top;
+      updateMap(m => ({ ...m, scroll: nextScroll }));
+    }
+  }
   function centerOn(n){ const p=positions.get(n.id); centerPoint(p); if(n?.quest) setSelected(n.quest); }
   function centerSelected(){
     if (!selected) { alert('Select a quest first.'); return; }
@@ -1147,7 +1209,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
     if (!focusRequest || !selectedNode) return;
     const frame = requestAnimationFrame(() => centerOn(selectedNode));
     return () => cancelAnimationFrame(frame);
-  }, [focusRequest, selectedNode?.id, zoom]);
+  }, [focusRequest, selectedNode?.id]);
   function focusLink(l){ setSelectedEdge(l); const target = graph.nodes.find(n => n.id === String(l.target)); if (target) centerOn(target); }
   function connectedLineFrom(startId){
     const nodeById = new Map(filteredNodes.map(n => [n.id, n]));
@@ -1228,7 +1290,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
     <div className="zoomControls" aria-label="Graph zoom controls"><button onClick={()=>zoomBy(-.1)}>−</button><strong>{Math.round(zoom*100)}%</strong><button onClick={()=>zoomBy(.1)}>+</button></div>
     <aside className={`edgeLegend ${legendCollapsed ? 'collapsed' : ''}`} aria-label="Graph edge legend"><div className="edgeLegendHead"><b>Edge legend</b><button type="button" onClick={()=>setLegendCollapsed(v=>!v)} aria-label={legendCollapsed ? 'Show edge legend' : 'Hide edge legend'}>{legendCollapsed ? '+' : '−'}</button></div>{!legendCollapsed && <><span><i className="normal"></i><em>Name/part chain<small>— Auto: Part 1 → Part 2</small></em></span><span><i className="permission"></i><em>Permission-name match<small>— Fallback by QuestPermission name</small></em></span><span><i className="permissionGrant"></i><em>Reward grants permission<small>— PrizeCommand unlocks target</small></em></span><span><i className="unlock"></i><em>Cross-quest unlock<small>— Grant into another questline</small></em></span><span><i className="manual"></i><em>Manual link<small>— Added by you</small></em></span><span><i className="loop"></i><em>Loop/back edge<small>— Returns to earlier quest</small></em></span></>}</aside>
     {selectedEdgeDetail ? <aside className="edgeDetail" aria-label="Selected edge details"><div><b>{selectedEdgeDetail.label}</b><button onClick={()=>setSelectedEdge(null)}>×</button></div><small>{selectedEdgeDetail.strength}</small><p>{selectedEdgeDetail.why}</p><dl><dt>From</dt><dd>#{selectedEdgeDetail.link.source} · {edgeQuestTitle(selectedEdgeDetail.sourceNode)}</dd><dt>To</dt><dd>#{selectedEdgeDetail.link.target} · {edgeQuestTitle(selectedEdgeDetail.targetNode)}</dd>{selectedEdgeDetail.permission ? <><dt>Target requires</dt><dd><code>{selectedEdgeDetail.permission}</code></dd></> : null}{selectedEdgeDetail.grantCommand ? <><dt>Source reward command</dt><dd><code>{selectedEdgeDetail.grantCommand}</code></dd></> : null}<dt>Internal reason</dt><dd><code>{selectedEdgeDetail.link.reason || 'manual'}</code></dd></dl></aside> : null}
-    <div className="graphCanvasWrap" style={{ width: width*zoom, height: height*zoom }}><div className="graphCanvas" style={{ width, height, transform:`scale(${zoom})` }}>
+    <div ref={canvasWrapRef} className="graphCanvasWrap" style={{ width: width*zoom, height: height*zoom }}><div className="graphCanvas" style={{ width, height, transform:`scale(${zoom})` }}>
       <svg className="wires" width={width} height={height}>
         <defs>
           <marker id="arrowQuest" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
