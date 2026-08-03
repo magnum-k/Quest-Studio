@@ -7,8 +7,12 @@ const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.12';
+const APP_VERSION = 'v1.1.0-beta.13';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.13', date: '2026-08-03', items: [
+    'Baked 39 XP badge assets into the beta app as local 512×512 previews with a manifest of public Freeimage URLs for exported Quest.json rewards.',
+    'Added an XP badge quick-pick inside Command rewards that fills givexp %STEAMID% <amount>, label, amount marker, and public preview image URL.'
+  ] },
   { version: 'v1.1.0-beta.12', date: '2026-08-01', items: [
     'Added a Cooldown helper in fullscreen edit with hour/day/week presets that writes the correct seconds value into Quest.json.',
     'Kept manual seconds editing available with a readable duration hint so cooldowns are easier to sanity-check.'
@@ -585,6 +589,20 @@ function useSteamItems(ids) {
   }, [clean.join(',')]);
   return { items, status };
 }
+function useXpBadges(active = true) {
+  const [state, setState] = useState({ loading: false, error: '', badges: [] });
+  useEffect(() => {
+    let cancelled = false;
+    if (!active) return;
+    setState(s => ({ ...s, loading: true, error: '' }));
+    fetch('/xp-badges/xp-badges.json')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`XP badge manifest ${r.status}`)))
+      .then(data => { if (!cancelled) setState({ loading: false, error: '', badges: data.badges || [] }); })
+      .catch(e => { if (!cancelled) setState({ loading: false, error: e.message, badges: [] }); });
+    return () => { cancelled = true; };
+  }, [active]);
+  return state;
+}
 
 function Rewards({ quest, steamItems = {} }) {
   const rewards = quest?.PrizeList || [];
@@ -632,8 +650,18 @@ function AddRewardDialog({ onAdd, onClose, steamItems }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [draft, setDraft] = useState({ PrizeName: '', ItemShortName: '', ItemName: '', ItemAmount: 1, CustomItemName: '', ItemSkinID: 0, PrizeCommand: '', CommandImageUrl: '', IsHidden: false });
   const activeType = rewardTypes.find(t => t.id === type) || rewardTypes[0];
+  const xpBadges = useXpBadges(type === 'Command');
   const set = (k,v) => setDraft(d => ({...d,[k]:v}));
   function pickItem(item){ setDraft(d => ({...d, ItemShortName:item.shortname, ItemName:item.name, PrizeName:d.PrizeName || item.name, CustomItemName:d.CustomItemName || item.name})); setPickerOpen(false); }
+  function pickXpBadge(badge) {
+    setDraft(d => ({
+      ...d,
+      PrizeName: badge.label,
+      ItemAmount: badge.xp,
+      PrizeCommand: `givexp %STEAMID% ${badge.xp}`,
+      CommandImageUrl: badge.publicUrl || badge.localPath
+    }));
+  }
   function add(){ onAdd(type === 'Command' ? rewardFromCommand(draft) : rewardFromItem(draft, Number(type))); }
   const previewTitle = draft.PrizeName || draft.CustomItemName || draft.ItemName || draft.ItemShortName || (type === 'Command' ? 'Command reward' : activeType.title);
   return <div className="modalBackdrop" onMouseDown={onClose}><div className="addRewardModal rewardBuilder" onMouseDown={e => e.stopPropagation()}>
@@ -653,6 +681,9 @@ function AddRewardDialog({ onAdd, onClose, steamItems }) {
         </> : <>
           <Field label="Command" value={draft.PrizeCommand} onChange={v => set('PrizeCommand', v)} textarea rows={3} />
           <div className="two"><Field label="Amount marker" type="number" value={draft.ItemAmount} onChange={v => set('ItemAmount', v)} /><Field label="Preview image URL" value={draft.CommandImageUrl} onChange={v => set('CommandImageUrl', v)} /></div>
+          <div className="xpBadgePicker"><div className="sectionHead compact"><div><h4>XP badge quick-pick</h4><small>Uses local 512×512 previews here, but writes the public image URL for exported Quest.json.</small></div><span>{xpBadges.badges.length || 0} badges</span></div>
+            {xpBadges.loading ? <p className="muted">Loading XP badges…</p> : xpBadges.error ? <p className="error">XP badges could not load: {xpBadges.error}</p> : <div className="xpBadgeGrid">{xpBadges.badges.map(badge => <button type="button" key={badge.id} className={draft.PrizeCommand === `givexp %STEAMID% ${badge.xp}` ? 'active' : ''} onClick={() => pickXpBadge(badge)}><img src={badge.localPath} alt="" loading="lazy" /><span>{badge.label}</span></button>)}</div>}
+          </div>
         </>}
         <BoolField label="Hidden reward" value={draft.IsHidden} onChange={v => set('IsHidden', v)} />
       </section>

@@ -520,6 +520,15 @@ header p { max-width: 670px; margin: 12px 0 0; font-size: 15px; line-height: 1.4
 .rewardForm { border: 1px solid rgba(148, 163, 184, .16); background: rgba(3, 7, 18, .42); border-radius: 22px; padding: 14px; }
 .selectedRewardForm { border-color: rgba(45, 212, 191, .58); background: rgba(8, 24, 39, .72); }
 .rewardFormHead { margin-bottom: 12px; }
+.xpBadgePicker { margin: 12px 0 16px; border: 1px solid rgba(250, 204, 21, .18); background: rgba(43, 30, 6, .20); border-radius: 20px; padding: 12px; }
+.sectionHead.compact { margin-bottom: 10px; align-items: start; }
+.sectionHead.compact h4 { margin: 0; color: #fde68a; }
+.sectionHead.compact span { color: #fef3c7; font-size: 11px; font-weight: 900; border: 1px solid rgba(250, 204, 21, .20); border-radius: 999px; padding: 4px 8px; }
+.xpBadgeGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; max-height: 280px; overflow: auto; padding-right: 4px; }
+.xpBadgeGrid button { padding: 7px; border-radius: 16px; background: rgba(3, 7, 18, .50); border: 1px solid rgba(148, 163, 184, .16); color: #f8fafc; display: grid; gap: 6px; justify-items: center; }
+.xpBadgeGrid button:hover, .xpBadgeGrid button.active { border-color: rgba(250, 204, 21, .68); background: rgba(113, 63, 18, .34); }
+.xpBadgeGrid img { width: 62px; height: 62px; object-fit: contain; border-radius: 14px; }
+.xpBadgeGrid span { font-size: 10px; font-weight: 900; color: #fde68a; }
 
 .itemPicker { width: min(940px, 96vw); height: min(92vh, 980px); display: flex; flex-direction: column; }
 .pickerTop { background: linear-gradient(135deg, #0891b2, #2563eb); display: grid; grid-template-columns: 220px 1fr auto; gap: 18px; align-items: center; padding: 14px 18px; }
