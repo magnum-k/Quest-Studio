@@ -7,8 +7,12 @@ const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.15';
+const APP_VERSION = 'v1.1.0-beta.16';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.16', date: '2026-08-03', items: [
+    'Added an explicit XDQuest category-prefix parser matching the plugin rule: a leading <color=#HEX>Category$</color> tag defines the quest category.',
+    'Locked category-prefix tests to the special XDQuest behavior so colored titles without the leading dollar marker are not mistaken for plugin categories.'
+  ] },
   { version: 'v1.1.0-beta.15', date: '2026-08-03', items: [
     'Kept the selected graph quest anchored in the viewport when zooming in or out, so zoom no longer loses the current node.'
   ] },

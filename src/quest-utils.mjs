@@ -59,9 +59,20 @@ export function questTitle(q) {
   return stripTags(q?.QuestDisplayName || q?.Name || q?.name || `Quest ${q?.QuestID ?? ''}`).trim();
 }
 
+export function questCategoryPrefix(q) {
+  const display = String(q?.QuestDisplayName || '');
+  const match = display.match(/^<color=#(?<hex>[0-9a-f]{6,8})>(?<name>[^<]*?)\$<\/color>/i);
+  if (!match?.groups?.name) return null;
+  const name = stripTags(match.groups.name).trim();
+  if (!name) return null;
+  return { name, hex: match.groups.hex };
+}
+
 export function questGroup(q) {
   const display = String(q?.QuestDisplayName || 'Untagged');
-  const tagMatch = display.match(/<color=[^>]+>([^<$:]+)\$?<\/color>/i);
+  const category = questCategoryPrefix(q);
+  if (category?.name) return category.name;
+  const tagMatch = display.match(/<color=[^>]+>([^<$:]+)<\/color>/i);
   if (tagMatch?.[1]) return stripTags(tagMatch[1]).replace(/[:$]/g, '').trim() || 'Untagged';
   const plain = stripTags(display);
   if (plain.includes('$')) return plain.split('$')[0].trim() || 'Untagged';

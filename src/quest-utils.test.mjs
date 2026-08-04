@@ -1,4 +1,4 @@
-import { buildQuestGraph, newQuestTemplate, parseColorTags, renderTaggedTextHtml, stripTags, questSeriesKey, partNumber } from './quest-utils.mjs';
+import { buildQuestGraph, newQuestTemplate, parseColorTags, renderTaggedTextHtml, stripTags, questSeriesKey, partNumber, questCategoryPrefix, questGroup } from './quest-utils.mjs';
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
@@ -11,6 +11,13 @@ assert(renderTaggedTextHtml(sample).includes('style="color:#eb8c34"'), 'should r
 
 assert(partNumber({ QuestDisplayName: 'Boss: Ace of Spade - Part 2' }) === 2, 'part number');
 assert(questSeriesKey({ QuestDisplayName: '<color=#c70000>Boss$</color><color=#c70000>Boss: </color>Ace of Spade - Part 1' }).includes('ace of spade'), 'series from name');
+const huntCategoryName = '<color=#c21d33>Hunt$</color><color=#c21d33>Hunt: </color>Wolf Trouble - Part 1';
+const huntCategory = questCategoryPrefix({ QuestDisplayName: huntCategoryName });
+assert(huntCategory?.name === 'Hunt' && huntCategory?.hex.toLowerCase() === 'c21d33', 'XDQuest category prefix parses exact leading hex color dollar tag');
+assert(questGroup({ QuestDisplayName: huntCategoryName }) === 'Hunt', 'XDQuest category prefix drives quest group');
+assert(questCategoryPrefix({ QuestDisplayName: '<color=orange>Hunt$</color><color=orange>Hunt: </color>Wolf Trouble - Part 1' }) === null, 'XDQuest category prefix requires plugin-compatible hex color tag');
+assert(questCategoryPrefix({ QuestDisplayName: '<color=#c21d33>Hunt</color><color=#c21d33>Hunt: </color>Wolf Trouble - Part 1' }) === null, 'XDQuest category prefix requires dollar marker');
+assert(questCategoryPrefix({ QuestDisplayName: 'Intro <color=#c21d33>Hunt$</color> Wolf Trouble' }) === null, 'XDQuest category prefix must be the first token');
 const editedSidequestName = '<color=#f59e0b>Boss$</color><color=#f59e0b>Boss: </color>Sidequest from CubeBuild: Part 1 – Block Party Gone Wrong';
 assert(stripTags(editedSidequestName).includes('Boss: Sidequest from CubeBuild'), 'edited Boss sidequest title strips safely');
 assert(renderTaggedTextHtml(editedSidequestName).includes('Boss: '), 'edited Boss sidequest title renders safely');
