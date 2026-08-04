@@ -68,6 +68,40 @@ export function questCategoryPrefix(q) {
   return { name, hex: match.groups.hex };
 }
 
+export function parseQuestCategoryDisplayName(input = '') {
+  const raw = String(input || '');
+  const category = questCategoryPrefix({ QuestDisplayName: raw });
+  let rest = category ? raw.replace(/^<color=#[0-9a-f]{6,8}>[^<]*?\$<\/color>\s*/i, '') : raw;
+  let lineLabel = category?.name || '';
+  let lineColor = category?.hex ? `#${category.hex}` : '#00BCD4';
+  const lineMatch = rest.match(/^<color=(?<color>[^>]+)>(?<label>[^<:]+):\s*<\/color>\s*/i);
+  if (lineMatch?.groups?.label) {
+    lineLabel = lineMatch.groups.label.trim();
+    lineColor = lineMatch.groups.color.trim();
+    rest = rest.slice(lineMatch[0].length);
+  }
+  return {
+    category: category?.name || '',
+    categoryColor: category?.hex ? `#${category.hex}` : '#00BCD4',
+    lineLabel,
+    lineColor,
+    title: rest.trim()
+  };
+}
+
+export function composeQuestCategoryDisplayName({ category = '', categoryColor = '#00BCD4', lineLabel = '', lineColor = '', title = '' } = {}) {
+  const cat = String(category || '').trim();
+  const catColor = String(categoryColor || '#00BCD4').trim();
+  const label = String(lineLabel || cat).trim();
+  const labelColor = String(lineColor || catColor).trim();
+  const cleanTitle = String(title || '').trim();
+  if (!cat) return cleanTitle;
+  const hex = catColor.match(/^#?[0-9a-f]{6,8}$/i) ? (catColor.startsWith('#') ? catColor : `#${catColor}`) : '#00BCD4';
+  const prefix = `<color=${hex}>${cat}$</color>`;
+  const line = label ? `<color=${labelColor}>${label}: </color>` : '';
+  return `${prefix}${line}${cleanTitle}`;
+}
+
 export function questGroup(q) {
   const display = String(q?.QuestDisplayName || 'Untagged');
   const category = questCategoryPrefix(q);

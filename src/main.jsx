@@ -1,14 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
-import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTemplate, partNumber, questGroup, questSeriesKey, renderTaggedTextHtml, rewardSummary, stripTags } from './quest-utils.mjs';
+import { buildQuestGraph, cleanDisplayNameMarkup, composeQuestCategoryDisplayName, extractSkinIds, newQuestTemplate, parseQuestCategoryDisplayName, partNumber, questCategoryPrefix, questGroup, questSeriesKey, renderTaggedTextHtml, rewardSummary, stripTags } from './quest-utils.mjs';
 
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.16';
+const APP_VERSION = 'v1.1.0-beta.17';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.17', date: '2026-08-04', items: [
+    'Added an optional XDQuest category helper in fullscreen edit for Category, Category color, Line label, and Line color fields.',
+    'Added a Settings/export toggle for the custom <color=#HEX>Category$</color> category-prefix workflow while keeping raw QuestDisplayName editing available.'
+  ] },
   { version: 'v1.1.0-beta.16', date: '2026-08-03', items: [
     'Added an explicit XDQuest category-prefix parser matching the plugin rule: a leading <color=#HEX>Category$</color> tag defines the quest category.',
     'Locked category-prefix tests to the special XDQuest behavior so colored titles without the leading dollar marker are not mistaken for plugin categories.'
@@ -236,6 +240,7 @@ function saveAutosaveSnapshot(snapshot = {}) {
         groupFilter: full.groupFilter || '',
         compactMode: !!full.compactMode,
         titleOnlyMode: !!full.titleOnlyMode,
+        xdQuestCategoryMode: !!full.xdQuestCategoryMode,
         manualMap: { positions: {}, links: [], zoom: full.manualMap?.zoom, scroll: full.manualMap?.scroll },
         savedAt,
         downloadedAt: full.downloadedAt || '',
@@ -584,6 +589,26 @@ function CooldownField({ value, onChange }) {
 }
 function BoolField({ label, value, onChange }) { return <label className="bool"><input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} /> {label}</label>; }
 
+function XdQuestCategoryHelper({ displayName, onChange }) {
+  const parsed = parseQuestCategoryDisplayName(displayName || '');
+  const categoryOk = !!questCategoryPrefix({ QuestDisplayName: displayName || '' });
+  const update = (key, value) => {
+    const next = { ...parsed, [key]: value };
+    onChange(composeQuestCategoryDisplayName(next));
+  };
+  return <section className={`categoryHelper ${categoryOk ? 'active' : 'missing'}`}>
+    <div className="categoryHelperHead"><div><b>XDQuest category helper</b><p>Builds the plugin category prefix <code>&lt;color=#HEX&gt;Category$&lt;/color&gt;</code> while keeping raw QuestDisplayName editable below.</p></div><span>{categoryOk ? 'PLUGIN CATEGORY OK' : 'NO VALID PREFIX YET'}</span></div>
+    <div className="categoryFields">
+      <Field label="Category" value={parsed.category} onChange={v => update('category', v)} />
+      <Field label="Category color — hex only" type="color" value={/^#[0-9a-f]{6}$/i.test(parsed.categoryColor) ? parsed.categoryColor : '#00BCD4'} onChange={v => update('categoryColor', v)} />
+      <Field label="Line label" value={parsed.lineLabel} onChange={v => update('lineLabel', v)} />
+      <Field label="Line color — hex or named" value={parsed.lineColor} onChange={v => update('lineColor', v)} />
+    </div>
+    <Field label="Visible quest title" value={parsed.title} onChange={v => update('title', v)} />
+    <small>Preview: <TaggedText value={composeQuestCategoryDisplayName(parsed)} /></small>
+  </section>;
+}
+
 function useSteamItems(ids) {
   const clean = useMemo(() => [...new Set((ids || []).filter(Boolean))].slice(0, 80), [ids?.join('|')]);
   const [items, setItems] = useState({});
@@ -849,7 +874,7 @@ function AiBrainPanel({ draft, questContext, onApply }) {
   </section>;
 }
 
-function EditorModal({ quest, quests = [], onClose, onSave, steamItems }) {
+function EditorModal({ quest, quests = [], onClose, onSave, steamItems, xdQuestCategoryMode = false }) {
   const [draft, setDraft] = useState(() => structuredClone(quest));
   const set = (key, value) => setDraft(d => ({ ...d, [key]: value }));
   const applyAiSuggestion = (suggestion = {}) => setDraft(d => ({
@@ -867,7 +892,8 @@ function EditorModal({ quest, quests = [], onClose, onSave, steamItems }) {
     <div className="modalBody questEditLayout">
       <div className="questEditWorkspace" aria-label="Quest edit controls">
         <section className="formPanel prominent"><h3>Edit fields</h3><div className="two"><Field label="QuestID" type="number" value={draft.QuestID} onChange={v => set('QuestID', v)} /><Field label="QuestPermission — used for chains" value={draft.QuestPermission} onChange={v => set('QuestPermission', v)} /></div>
-          <Field label="QuestDisplayName" value={draft.QuestDisplayName} onChange={v => set('QuestDisplayName', v)} textarea rows={3} />
+          {xdQuestCategoryMode ? <XdQuestCategoryHelper displayName={draft.QuestDisplayName} onChange={v => set('QuestDisplayName', v)} /> : null}
+          <Field label="QuestDisplayName — raw override" value={draft.QuestDisplayName} onChange={v => set('QuestDisplayName', v)} textarea rows={3} />
           <Field label="QuestDescription" value={draft.QuestDescription} onChange={v => set('QuestDescription', v)} textarea rows={7} />
           <Field label="QuestMissions" value={draft.QuestMissions} onChange={v => set('QuestMissions', v)} textarea rows={3} />
           <div className="three"><QuestTypeField value={draft.QuestType} onChange={v => set('QuestType', v)} /><Field label="Target / skin id / target" value={draft.Target} onChange={v => set('Target', v)} /><Field label="ActionCount" type="number" value={draft.ActionCount} onChange={v => set('ActionCount', v)} /></div>
@@ -1406,13 +1432,15 @@ function SaveInfoOverlay({ fileName, savedAt, sourceBaseName, backups = [], onCr
   </section></div>;
 }
 
-function SettingsView({ quests, baselineQuests = [], graph, manualMap, mapSteamStatus, issues = [], backups = [], fileName, fileStatus, fileNeedsDownload, onDownloadJson, onDownloadMap, onNewQuest, onShowGraph, onOpenQuest, onSearchRelated }) {
+function SettingsView({ quests, baselineQuests = [], graph, manualMap, mapSteamStatus, issues = [], backups = [], fileName, fileStatus, fileNeedsDownload, xdQuestCategoryMode = false, setXdQuestCategoryMode, onDownloadJson, onDownloadMap, onNewQuest, onShowGraph, onOpenQuest, onSearchRelated }) {
   const errors = issues.filter(i => i.severity === 'error').length;
   const warns = issues.filter(i => i.severity === 'warn').length;
   const manualCount = (manualMap.links || []).length + Object.keys(manualMap.positions || {}).length;
   const ready = quests.length > 0 && errors === 0;
   const diff = exportDiffSummary(quests, baselineQuests);
   const chainIssues = brokenChainIssues(graph);
+  const categoryPrefixCount = quests.filter(q => questCategoryPrefix(q)).length;
+  const categoryNames = [...new Set(quests.map(q => questCategoryPrefix(q)?.name).filter(Boolean))].sort();
   const chainWarns = chainIssues.filter(i => i.severity === 'warn').length;
   const diffItems = [
     { label: 'Added quests', value: diff.added.length, detail: diff.added.slice(0, 3).map(q => `#${q.QuestID}`).join(', ') || 'None', rows: diff.added.map(q => ({ quest: q, fields: ['new quest'], kind: 'added' })) },
@@ -1431,6 +1459,7 @@ function SettingsView({ quests, baselineQuests = [], graph, manualMap, mapSteamS
   return <section className="workspace">
     <div className="viewHead"><h2>Settings & export</h2><p>Export a clean Quest.json and save map layout as a separate sidecar file.</p></div>
     <div className="settingsGrid"><div className="statCard"><b>{quests.length}</b><span>quests</span></div><div className="statCard"><b>{graph.links.length}</b><span>auto chains</span></div><div className="statCard"><b>{(manualMap.links||[]).length}</b><span>manual links</span></div><div className="statCard"><b>{chainIssues.length}</b><span>chain helper notes</span></div><div className="statCard"><b>{mapSteamStatus || '—'}</b><span>Steam skin cache</span></div></div>
+    <section className={`categoryModePanel ${xdQuestCategoryMode ? 'active' : ''}`}><div><h3>XDQuest category-prefix helper</h3><p>Your custom XDQuest reads a category only from a leading <code>&lt;color=#HEX&gt;Category$&lt;/color&gt;</code> prefix in <code>QuestDisplayName</code>. This toggle shows helper fields in fullscreen edit; raw QuestDisplayName remains editable.</p><small>{categoryPrefixCount}/{quests.length} quests currently have valid plugin category prefixes{categoryNames.length ? ` · ${categoryNames.slice(0, 12).join(', ')}${categoryNames.length > 12 ? '…' : ''}` : ''}</small></div><label className="toggleLine"><input type="checkbox" checked={!!xdQuestCategoryMode} onChange={e => setXdQuestCategoryMode?.(e.target.checked)} /> Show category helper in quest editor</label></section>
     <section className={`readinessPanel ${ready?'ready':'blocked'}`}><div><h3>Export readiness</h3><p>{ready ? 'Ready for a clean Quest.json export. Review warnings and map sidecar notes if needed.' : 'Not ready for a clean handoff yet. Fix or intentionally accept the items below.'}</p></div><b>{ready ? 'READY' : 'CHECK FIRST'}</b><div className="readinessList">{checklist.map(item => <div className={item.ok?'ok':'warn'} key={item.label}><span>{item.ok?'✓':'!'}</span><p><b>{item.label}</b><small>{item.detail}</small></p></div>)}</div></section>
     <section className={`chainHelper ${chainWarns ? 'blocked' : 'clean'}`}><div><h3>Broken-chain helper</h3><p>{chainIssues.length ? 'Potential chain problems found from parts, required permissions, and reward grants. Click a quest to inspect it or show it on the graph.' : 'No obvious missing Part 1 links, missing grantors, unused grants, or ambiguous grants found.'}</p></div><b>{chainWarns ? `${chainWarns} CHECK` : 'OK'}</b>{chainIssues.length ? <div className="chainIssueList">{chainIssues.slice(0, 16).map((issue, i) => <article key={`${issue.type}-${issue.quest?.QuestID || 'map'}-${i}`} className={issue.severity}><span>{issue.severity}</span><div><b>{issue.title}</b><small>{issue.quest ? <>#{issue.quest.QuestID} · <TaggedText value={questTitle(issue.quest)} /></> : 'Graph metadata'} · {issue.detail}</small></div>{issue.quest ? <div className="rowActions"><button onClick={() => onOpenQuest?.(issue.quest)}>Open</button><button onClick={() => onShowGraph?.(issue.quest)}>Show graph</button><button onClick={() => onSearchRelated?.(chainIssueSearchText(issue))}>Search related</button></div> : null}</article>)}</div> : null}</section>
     <section className={`exportPreview ${diff.clean ? 'clean' : 'dirty'}`}><div><h3>Export preview</h3><p>{diff.clean ? 'No Quest.json data changes compared with the latest loaded/downloaded baseline.' : 'These are the Quest.json changes that will be included in the next download. Click rows to inspect or jump to graph before exporting.'}</p></div><b>{diff.clean ? 'NO DATA CHANGES' : 'CHANGES PENDING'}</b><div className="diffGrid">{diffItems.map(item => <article key={item.label} className={item.value ? 'dirty' : 'clean'}><strong>{item.value}</strong><span>{item.label}</span><small>{item.detail}</small></article>)}</div>{diff.topFields.length ? <div className="diffFields"><b>Most changed fields</b>{diff.topFields.map(([field, count]) => <span key={field}>{field} × {count}</span>)}</div> : null}{diffItems.some(item => item.rows.length) ? <div className="diffDetails"><b>Diff details</b>{diffItems.flatMap(item => item.rows.slice(0, 8).map((row, idx) => <article key={`${item.label}-${row.quest?.QuestID}-${idx}`} className={row.kind}><span>{item.label}</span><div><b>#{row.quest?.QuestID} · <TaggedText value={questTitle(row.quest)} /></b><small>{row.fields.slice(0, 8).join(', ')}</small>{row.kind === 'changed' ? <div className="fieldDiffs">{row.fields.slice(0, 4).map(field => <div key={field}><span>{field}</span><code>Before: {formatDiffValue(row.before?.[field])}</code><code>After: {formatDiffValue(row.quest?.[field])}</code></div>)}</div> : null}</div><div className="rowActions"><button onClick={() => onOpenQuest?.(row.quest)} disabled={row.kind === 'removed'}>{row.kind === 'removed' ? 'Removed' : 'Open'}</button><button onClick={() => onShowGraph?.(row.quest)} disabled={row.kind === 'removed'}>Show graph</button></div></article>))}</div> : null}</section>
@@ -1452,6 +1481,7 @@ function App() {
   const [activeTab, setActiveTab] = useState(() => initial.activeTab || 'graph');
   const [compactMode, setCompactMode] = useState(() => !!initial.compactMode);
   const [titleOnlyMode, setTitleOnlyMode] = useState(() => !!initial.titleOnlyMode);
+  const [xdQuestCategoryMode, setXdQuestCategoryMode] = useState(() => initial.xdQuestCategoryMode ?? (initial.quests || []).some(q => questCategoryPrefix(q)));
   const [showSaveInfo, setShowSaveInfo] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(() => initial.savedAt || '');
   const [lastDownloadedAt, setLastDownloadedAt] = useState(() => initial.downloadedAt || '');
@@ -1477,14 +1507,14 @@ function App() {
   useEffect(()=>{
     if (!quests.length || !fileName || fileName === 'no file loaded') return;
     const savedAt = new Date().toISOString();
-    const result = saveAutosaveSnapshot({ quests, baselineQuests, fileName, sourceBaseName, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, undoStack: undoStack.slice(0, 20), savedAt, downloadedAt: lastDownloadedAt, lastDownloadedKey });
+    const result = saveAutosaveSnapshot({ quests, baselineQuests, fileName, sourceBaseName, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, undoStack: undoStack.slice(0, 20), savedAt, downloadedAt: lastDownloadedAt, lastDownloadedKey });
     if (result.ok) setLastSavedAt(result.savedAt);
-  }, [quests, baselineQuests, fileName, sourceBaseName, manualMap, selected?.QuestID, activeTab, query, groupFilter, compactMode, titleOnlyMode, undoStack, lastDownloadedAt, lastDownloadedKey]);
+  }, [quests, baselineQuests, fileName, sourceBaseName, manualMap, selected?.QuestID, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, undoStack, lastDownloadedAt, lastDownloadedKey]);
   function persistAutosaveNow(overrides = {}){
     const next = {
       quests, baselineQuests, fileName, sourceBaseName, manualMap,
       selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter,
-      compactMode, titleOnlyMode, undoStack: undoStack.slice(0, 20),
+      compactMode, titleOnlyMode, xdQuestCategoryMode, undoStack: undoStack.slice(0, 20),
       savedAt: new Date().toISOString(), downloadedAt: lastDownloadedAt, lastDownloadedKey,
       ...overrides
     };
@@ -1494,11 +1524,11 @@ function App() {
     }
     return next;
   }
-  async function loadText(text,name){ const parsed=JSON.parse(text); if(!Array.isArray(parsed)) throw new Error('Quest.json must be an array of quest objects'); setQuests(parsed); setBaselineQuests(parsed); setFileName(name); setSourceBaseName(baseNameFromFile(name)); setSelected(parsed[0]||null); setGroupFilter(''); setActiveTab('graph'); setUndoStack([]); try{ setManualMap(JSON.parse(localStorage.getItem(mapKey(name)) || '{"positions":{},"links":[]}')); }catch{ setManualMap({positions:{},links:[]}); } }
+  async function loadText(text,name){ const parsed=JSON.parse(text); if(!Array.isArray(parsed)) throw new Error('Quest.json must be an array of quest objects'); setQuests(parsed); setBaselineQuests(parsed); setFileName(name); setSourceBaseName(baseNameFromFile(name)); setSelected(parsed[0]||null); setGroupFilter(''); setActiveTab('graph'); setUndoStack([]); setXdQuestCategoryMode(parsed.some(q => questCategoryPrefix(q))); try{ setManualMap(JSON.parse(localStorage.getItem(mapKey(name)) || '{"positions":{},"links":[]}')); }catch{ setManualMap({positions:{},links:[]}); } }
   async function onFile(e){ const file=e.target.files?.[0]; if(!file)return; try{ await loadText(await file.text(),file.name); }catch(err){ alert('JSON error: '+err.message); } }
   function refreshGraphView(){ setGraphRevision(v => v + 1); }
   function captureUndoState(label){
-    return { label, createdAt: Date.now(), quests: structuredClone(quests), baselineQuests: structuredClone(baselineQuests), manualMap: structuredClone(manualMap), fileName, sourceBaseName, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, lastDownloadedAt, lastDownloadedKey };
+    return { label, createdAt: Date.now(), quests: structuredClone(quests), baselineQuests: structuredClone(baselineQuests), manualMap: structuredClone(manualMap), fileName, sourceBaseName, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, lastDownloadedAt, lastDownloadedKey };
   }
   function pushUndo(label){
     if (!quests.length) return;
@@ -1521,6 +1551,7 @@ function App() {
     setGroupFilter(snapshot.groupFilter || '');
     setCompactMode(!!snapshot.compactMode);
     setTitleOnlyMode(!!snapshot.titleOnlyMode);
+    setXdQuestCategoryMode(snapshot.xdQuestCategoryMode ?? (snapshot.quests || []).some(q => questCategoryPrefix(q)));
     setLastDownloadedAt(snapshot.lastDownloadedAt || '');
     setLastDownloadedKey(snapshot.lastDownloadedKey || '');
     setEditing(null);
@@ -1563,7 +1594,7 @@ function App() {
   function createLocalBackup(reason = 'Manual snapshot'){
     if (!quests.length) { alert('Load Quest.json before creating a backup snapshot.'); return; }
     const createdAt = new Date().toISOString();
-    const snapshot = { id: `backup-${Date.now()}`, createdAt, reason, fileName, sourceBaseName, quests, baselineQuests, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, questCount: quests.length };
+    const snapshot = { id: `backup-${Date.now()}`, createdAt, reason, fileName, sourceBaseName, quests, baselineQuests, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, questCount: quests.length };
     setLocalBackups(list => [snapshot, ...list].slice(0, 5));
   }
   function restoreLocalBackup(snapshot){
@@ -1581,6 +1612,7 @@ function App() {
     setGroupFilter(snapshot.groupFilter || '');
     setCompactMode(!!snapshot.compactMode);
     setTitleOnlyMode(!!snapshot.titleOnlyMode);
+    setXdQuestCategoryMode(snapshot.xdQuestCategoryMode ?? (snapshot.quests || []).some(q => questCategoryPrefix(q)));
     setLastDownloadedAt('');
     setLastDownloadedKey('');
     refreshGraphView();
@@ -1616,11 +1648,11 @@ function App() {
     const status = fileNeedsDownload ? 'needs download' : (quests.length ? 'downloaded' : 'empty');
     document.title = `${fileNeedsDownload ? '● ' : ''}Quest Studio ${APP_VERSION} — ${name} — ${status}`;
   }, [fileName, fileNeedsDownload, quests.length]);
-  const workspace = activeTab === 'changelog' ? <ChangelogView/> : !quests.length ? <div className="empty"><h2>Upload Quest.json</h2><p>The file is kept in memory. Manual positions/links are saved locally per filename and can be exported separately.</p></div> : activeTab === 'graph' ? <Graph quests={quests} selected={selected} setSelected={setSelected} groupFilter={groupFilter} query={query} steamItems={steamItems} manualMap={manualMap} setManualMap={setManualMap} onCreateNext={createNextQuest} onCreateSideQuest={createSideQuest} onApplyGridOrder={applyGridOrderToJson} issues={issues} focusRequest={graphFocusRequest} compactMode={compactMode} titleOnlyMode={titleOnlyMode}/> : activeTab === 'list' ? <QuestListView quests={quests} selected={selected} setSelected={setSelected} onShowGraph={focusQuestInGraph} query={query}/> : activeTab === 'validation' ? <ValidationView issues={issues} setSelected={focusQuestInGraph} selected={selected}/> : <SettingsView quests={quests} baselineQuests={baselineQuests} graph={graph} manualMap={manualMap} mapSteamStatus={mapSteamStatus} issues={issues} backups={localBackups} fileName={fileName} fileStatus={fileStatus} fileNeedsDownload={fileNeedsDownload} onDownloadJson={downloadJson} onDownloadMap={downloadMap} onNewQuest={createNew} onShowGraph={focusQuestInGraph} onOpenQuest={openQuestInspector} onSearchRelated={searchRelated}/>;
+  const workspace = activeTab === 'changelog' ? <ChangelogView/> : !quests.length ? <div className="empty"><h2>Upload Quest.json</h2><p>The file is kept in memory. Manual positions/links are saved locally per filename and can be exported separately.</p></div> : activeTab === 'graph' ? <Graph quests={quests} selected={selected} setSelected={setSelected} groupFilter={groupFilter} query={query} steamItems={steamItems} manualMap={manualMap} setManualMap={setManualMap} onCreateNext={createNextQuest} onCreateSideQuest={createSideQuest} onApplyGridOrder={applyGridOrderToJson} issues={issues} focusRequest={graphFocusRequest} compactMode={compactMode} titleOnlyMode={titleOnlyMode}/> : activeTab === 'list' ? <QuestListView quests={quests} selected={selected} setSelected={setSelected} onShowGraph={focusQuestInGraph} query={query}/> : activeTab === 'validation' ? <ValidationView issues={issues} setSelected={focusQuestInGraph} selected={selected}/> : <SettingsView quests={quests} baselineQuests={baselineQuests} graph={graph} manualMap={manualMap} mapSteamStatus={mapSteamStatus} issues={issues} backups={localBackups} fileName={fileName} fileStatus={fileStatus} fileNeedsDownload={fileNeedsDownload} xdQuestCategoryMode={xdQuestCategoryMode} setXdQuestCategoryMode={setXdQuestCategoryMode} onDownloadJson={downloadJson} onDownloadMap={downloadMap} onNewQuest={createNew} onShowGraph={focusQuestInGraph} onOpenQuest={openQuestInspector} onSearchRelated={searchRelated}/>;
   return <main className={`${compactMode ? 'compactMode' : 'comfortMode'} ${titleOnlyMode ? 'titleOnlyMode' : ''}`}><header><div className="brandBlock"><img className="brandLogo" src="/12g-logo.jpg" alt="12G" /><div><h1>Quest Studio <span className="appVersion">{APP_VERSION}</span></h1><p>Local XDQuest editor with a visual quest graph, inspector, validation, and safe JSON export.</p></div></div><div className="actions"><input ref={fileRef} type="file" accept=".json,application/json" onChange={onFile}/><button onClick={()=>fileRef.current.click()}>Load Quest.json</button><button className="primary" disabled={!quests.length} onClick={downloadJson}>Save file / Download Quest.json</button><button disabled={!quests.length} onClick={downloadMap}>Download map</button><button onClick={()=>setShowSaveInfo(true)}>Save info</button></div></header>
     <section className="tabs">{tabs.map(([id,label]) => <button key={id} className={activeTab===id?'active':''} onClick={()=>setActiveTab(id)}>{label}</button>)}</section>
     <section className="toolbar"><b>{fileName}</b><span>{quests.length} quests · {graph.links.length} auto chains · {(manualMap.links||[]).length} manual · autosaves instantly{lastSavedAt ? ` · last ${new Date(lastSavedAt).toLocaleTimeString()}` : ''} · <em className={fileNeedsDownload?'fileDirty':'fileClean'}>{fileStatus}</em> · {mapSteamStatus}</span><button className="undoButton" disabled={!undoStack.length} title={undoStack[0] ? `Undo: ${undoStack[0].label}` : 'Nothing to undo'} onClick={undoLastAction}>↶ Undo{undoStack[0] ? `: ${undoStack[0].label}` : ''}</button><input placeholder="Search quest, ID, text…" value={query} onChange={e=>setQuery(e.target.value)}/><select value={groupFilter} onChange={e=>setGroupFilter(e.target.value)}><option value="">All groups</option>{graph.groups.map(g=><option key={g}>{g}</option>)}</select><button className={compactMode?'active densityToggle':'densityToggle'} onClick={()=>setCompactMode(v=>!v)}>{compactMode?'Compact on':'Comfort mode'}</button><button className={titleOnlyMode?'active densityToggle':'densityToggle'} onClick={()=>setTitleOnlyMode(v=>!v)}>{titleOnlyMode?'Graph boxes: title only':'Graph boxes: full'}</button><button onClick={createNew}>+ New quest</button></section>
-    <div className="layout"><section className="mainPanel">{workspace}</section><QuestInspector quest={selected} baselineQuest={selected?.QuestID == null ? null : baselineById.get(String(selected.QuestID))} steamItems={steamItems} issues={issues} onPatch={patchQuest} onAdvanced={()=>selected && setEditing(selected)} /></div>{editing&&<EditorModal quest={editing} quests={quests} steamItems={steamItems} onClose={()=>setEditing(null)} onSave={saveQuest}/>} {showSaveInfo&&<SaveInfoOverlay fileName={fileName} sourceBaseName={sourceBaseName} savedAt={lastSavedAt} backups={localBackups} onCreateBackup={createLocalBackup} onRestoreBackup={restoreLocalBackup} onClose={()=>setShowSaveInfo(false)}/>}</main>;
+    <div className="layout"><section className="mainPanel">{workspace}</section><QuestInspector quest={selected} baselineQuest={selected?.QuestID == null ? null : baselineById.get(String(selected.QuestID))} steamItems={steamItems} issues={issues} onPatch={patchQuest} onAdvanced={()=>selected && setEditing(selected)} /></div>{editing&&<EditorModal quest={editing} quests={quests} steamItems={steamItems} xdQuestCategoryMode={xdQuestCategoryMode} onClose={()=>setEditing(null)} onSave={saveQuest}/>} {showSaveInfo&&<SaveInfoOverlay fileName={fileName} sourceBaseName={sourceBaseName} savedAt={lastSavedAt} backups={localBackups} onCreateBackup={createLocalBackup} onRestoreBackup={restoreLocalBackup} onClose={()=>setShowSaveInfo(false)}/>}</main>;
 }
 
 createRoot(document.getElementById('root')).render(<AppCrashBoundary><App/></AppCrashBoundary>);

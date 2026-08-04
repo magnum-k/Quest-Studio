@@ -1,4 +1,4 @@
-import { buildQuestGraph, newQuestTemplate, parseColorTags, renderTaggedTextHtml, stripTags, questSeriesKey, partNumber, questCategoryPrefix, questGroup } from './quest-utils.mjs';
+import { buildQuestGraph, newQuestTemplate, parseColorTags, renderTaggedTextHtml, stripTags, questSeriesKey, partNumber, questCategoryPrefix, questGroup, parseQuestCategoryDisplayName, composeQuestCategoryDisplayName } from './quest-utils.mjs';
 
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
@@ -18,6 +18,11 @@ assert(questGroup({ QuestDisplayName: huntCategoryName }) === 'Hunt', 'XDQuest c
 assert(questCategoryPrefix({ QuestDisplayName: '<color=orange>Hunt$</color><color=orange>Hunt: </color>Wolf Trouble - Part 1' }) === null, 'XDQuest category prefix requires plugin-compatible hex color tag');
 assert(questCategoryPrefix({ QuestDisplayName: '<color=#c21d33>Hunt</color><color=#c21d33>Hunt: </color>Wolf Trouble - Part 1' }) === null, 'XDQuest category prefix requires dollar marker');
 assert(questCategoryPrefix({ QuestDisplayName: 'Intro <color=#c21d33>Hunt$</color> Wolf Trouble' }) === null, 'XDQuest category prefix must be the first token');
+const parsedSkillCategory = parseQuestCategoryDisplayName('<color=#ea42ad>Skill$</color><color=#ea42ad>Elevator: </color>The Price of Genius - Part 1');
+assert(parsedSkillCategory.category === 'Skill' && parsedSkillCategory.lineLabel === 'Elevator' && parsedSkillCategory.title === 'The Price of Genius - Part 1', 'category helper parses separate category and line label');
+assert(composeQuestCategoryDisplayName(parsedSkillCategory) === '<color=#ea42ad>Skill$</color><color=#ea42ad>Elevator: </color>The Price of Genius - Part 1', 'category helper composes plugin-compatible display name');
+const parsedNamedLineColor = parseQuestCategoryDisplayName('<color=#eb8c34>Halloween$</color><color=orange>Halloween:</color> Not Halloween!: Brainstorm');
+assert(parsedNamedLineColor.lineColor === 'orange' && composeQuestCategoryDisplayName(parsedNamedLineColor).includes('<color=orange>Halloween: </color>'), 'category helper preserves named line colors');
 const editedSidequestName = '<color=#f59e0b>Boss$</color><color=#f59e0b>Boss: </color>Sidequest from CubeBuild: Part 1 – Block Party Gone Wrong';
 assert(stripTags(editedSidequestName).includes('Boss: Sidequest from CubeBuild'), 'edited Boss sidequest title strips safely');
 assert(renderTaggedTextHtml(editedSidequestName).includes('Boss: '), 'edited Boss sidequest title renders safely');

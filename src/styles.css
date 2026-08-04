@@ -487,7 +487,32 @@ header p { max-width: 670px; margin: 12px 0 0; font-size: 15px; line-height: 1.4
 .cooldownField { display: grid; gap: 8px; margin-bottom: 16px; }
 .cooldownField .field { margin-bottom: 0; }
 .cooldownField small { color: #c4e9ff; border: 1px solid rgba(125, 211, 252, .18); background: rgba(14, 116, 144, .10); border-radius: 12px; padding: 7px 9px; font-weight: 800; }
+.categoryHelper, .categoryModePanel {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 16px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(125, 211, 252, .20);
+  background: linear-gradient(135deg, rgba(14, 116, 144, .12), rgba(15, 23, 42, .62));
+}
+.categoryHelper.active, .categoryModePanel.active { border-color: rgba(45, 212, 191, .38); box-shadow: 0 0 0 4px rgba(45, 212, 191, .06); }
+.categoryHelper.missing { border-color: rgba(251, 191, 36, .28); background: linear-gradient(135deg, rgba(120, 53, 15, .14), rgba(15, 23, 42, .62)); }
+.categoryHelperHead, .categoryModePanel { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.categoryHelperHead { display: grid; gap: 12px; }
+.categoryHelperHead b, .categoryModePanel h3 { color: #dffcff; }
+.categoryHelperHead p, .categoryModePanel p { margin: 4px 0 0; color: #a8c5e6; font-size: 12px; line-height: 1.4; }
+.categoryHelperHead span { border-radius: 999px; padding: 6px 9px; color: #03111c; background: #fbbf24; font-size: 11px; font-weight: 900; white-space: nowrap; }
+.categoryHelper.active .categoryHelperHead span { background: #5eead4; }
+.categoryFields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.categoryHelper .field { margin-bottom: 0; }
+.categoryHelper small, .categoryModePanel small { color: #dbeafe; line-height: 1.45; }
+.categoryHelper code, .categoryModePanel code { color: #fde68a; }
+.toggleLine { display: flex; align-items: center; gap: 10px; color: #f8fafc; font-weight: 900; white-space: nowrap; }
+.toggleLine input { width: 18px; height: 18px; accent-color: #2dd4bf; }
+@media (max-width: 1100px) { .categoryFields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .categoryHelperHead, .categoryModePanel { grid-template-columns: 1fr; } }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.rewardList { display: grid; gap: 10px; margin: 12px 0; }
 .three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
 .four { display: grid; grid-template-columns: 1fr 150px 100px 110px; gap: 12px; align-items: start; }
 .selectItemRow { display: grid; grid-template-columns: 190px 1fr; gap: 16px; align-items: end; }
