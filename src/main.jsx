@@ -1,18 +1,59 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
-import { buildQuestGraph, cleanDisplayNameMarkup, extractSkinIds, newQuestTemplate, partNumber, questGroup, questSeriesKey, renderTaggedTextHtml, rewardSummary, stripTags } from './quest-utils.mjs';
+import { buildQuestGraph, cleanDisplayNameMarkup, composeQuestCategoryDisplayName, extractSkinIds, newQuestTemplate, parseQuestCategoryDisplayName, partNumber, questCategoryPrefix, questGroup, questSeriesKey, renderTaggedTextHtml, rewardSummary, stripTags } from './quest-utils.mjs';
 
 const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v2.0.0';
+const APP_VERSION = 'v2.1.0';
 const CHANGELOG = [
+  { version: 'v2.1.0', date: '2026-09-18', items: [
+    'Promoted the latest beta graph/editor improvements to stable, including top-row graph headroom, double-click node editing, raw <color=> palette helpers, and adjacent placement for newly created next-quest nodes.',
+    'Promoted the permission-chain reward helpers: + next quest now adds the hidden o.grant reward to the source quest, and command rewards include one-click grant/revoke helpers.',
+    'Included the XP badge reward picker and local badge preview library while keeping exported Quest.json image URLs public-game-safe.'
+  ] },
   { version: 'v2.0.0', date: '2026-08-01', items: [
     'Promoted beta to main as Quest Studio 2.0 with the optional AI Brain, uploaded Quest.json context, stored/shared OpenAI traffic support, and cached AI draft suggestions.',
     'Included graph/editor stability improvements from the beta line, including crash recovery, safer graph movement, autosave compaction, and questline/permission-grant inference fixes.',
     'Added the Cooldown helper in fullscreen edit with hour/day/week presets that still writes raw seconds into Quest.json.'
+  ] },
+  { version: 'v1.1.0-beta.21', date: '2026-09-16', items: [
+    'Made permission grant/revoke command rewards first-class in the reward builder with one-click grant and revoke helpers.',
+    'Clarified the + next quest flow so the source quest automatically receives the hidden permission grant that unlocks the created next part.'
+  ] },
+  { version: 'v1.1.0-beta.20', date: '2026-09-16', items: [
+    'Added color-palette helpers for raw quest text fields when typing <color= so hex tags can be inserted without memorizing codes.',
+    'Changed + next-quest creation to add the required hidden o.grant permission reward to the source quest automatically.',
+    'Placed newly created + next quest nodes visually next to their source node instead of letting auto-layout drop them far away.'
+  ] },
+  { version: 'v1.1.0-beta.19', date: '2026-09-16', items: [
+    'Added double-click on graph quest nodes to open the same fullscreen edit overlay as the inspector button.'
+  ] },
+  { version: 'v1.1.0-beta.18', date: '2026-09-16', items: [
+    'Added graph headroom above the first row so top-row quest nodes can be moved upward instead of being pinned against the scroll boundary.',
+    'Migrated saved manual graph positions into the new headroom space automatically, preserving existing layouts while making them easier to rearrange.'
+  ] },
+  { version: 'v1.1.0-beta.17', date: '2026-08-04', items: [
+    'Added an optional XDQuest category helper in fullscreen edit for Category, Category color, Line label, and Line color fields.',
+    'Added a Settings/export toggle for the custom <color=#HEX>Category$</color> category-prefix workflow while keeping raw QuestDisplayName editing available.'
+  ] },
+  { version: 'v1.1.0-beta.16', date: '2026-08-03', items: [
+    'Added an explicit XDQuest category-prefix parser matching the plugin rule: a leading <color=#HEX>Category$</color> tag defines the quest category.',
+    'Locked category-prefix tests to the special XDQuest behavior so colored titles without the leading dollar marker are not mistaken for plugin categories.'
+  ] },
+  { version: 'v1.1.0-beta.15', date: '2026-08-03', items: [
+    'Kept the selected graph quest anchored in the viewport when zooming in or out, so zoom no longer loses the current node.'
+  ] },
+  { version: 'v1.1.0-beta.14', date: '2026-08-03', items: [
+    'Added the final 4M–6M XP badge batch to the local 512×512 badge library and Freeimage-backed export manifest.',
+    'Updated the XP badge reward picker so givexp commands include the required trailing true flag after the XP amount.'
+  ] },
+  { version: 'v1.1.0-beta.13', date: '2026-08-03', items: [
+    'Baked 39 XP badge assets into the beta app as local 512×512 previews with a manifest of public Freeimage URLs for exported Quest.json rewards.',
+    'Added an XP badge quick-pick inside Command rewards that fills givexp %STEAMID% <amount>, label, amount marker, and public preview image URL.'
+
   ] },
   { version: 'v1.1.0-beta.12', date: '2026-08-01', items: [
     'Added a Cooldown helper in fullscreen edit with hour/day/week presets that writes the correct seconds value into Quest.json.',
@@ -226,6 +267,7 @@ function saveAutosaveSnapshot(snapshot = {}) {
         groupFilter: full.groupFilter || '',
         compactMode: !!full.compactMode,
         titleOnlyMode: !!full.titleOnlyMode,
+        xdQuestCategoryMode: !!full.xdQuestCategoryMode,
         manualMap: { positions: {}, links: [], zoom: full.manualMap?.zoom, scroll: full.manualMap?.scroll },
         savedAt,
         downloadedAt: full.downloadedAt || '',
@@ -533,6 +575,40 @@ function Field({ label, value, onChange, type = 'text', textarea = false, rows =
     <input type={type} value={value ?? ''} onChange={e => onChange(type === 'number' ? Number(e.target.value) : e.target.value)} />
   }</label>;
 }
+
+const colorSwatches = [
+  ['#ffffff', 'White'], ['#facc15', 'Yellow'], ['#f97316', 'Orange'], ['#ef4444', 'Red'],
+  ['#ec4899', 'Pink'], ['#a855f7', 'Purple'], ['#3b82f6', 'Blue'], ['#06b6d4', 'Cyan'],
+  ['#22c55e', 'Green'], ['#84cc16', 'Lime'], ['#a16207', 'Rust'], ['#94a3b8', 'Slate']
+];
+function ColorMarkupField({ label, value, onChange, rows = 3 }) {
+  const ref = useRef(null);
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const text = String(value ?? '');
+  const beforeCursor = text.slice(0, selection.start);
+  const triggerMatch = beforeCursor.match(/<color=([^>\s]*)$/i);
+  const showPicker = !!triggerMatch;
+  function rememberCursor(e) { setSelection({ start: e.target.selectionStart ?? 0, end: e.target.selectionEnd ?? e.target.selectionStart ?? 0 }); }
+  function insertColor(hex) {
+    const input = ref.current;
+    const start = input?.selectionStart ?? selection.start;
+    const end = input?.selectionEnd ?? selection.end;
+    const prefixStart = text.slice(0, start).toLowerCase().lastIndexOf('<color=');
+    if (prefixStart < 0) return;
+    const replaceStart = prefixStart + '<color='.length;
+    const next = text.slice(0, replaceStart) + hex + text.slice(end);
+    onChange(next);
+    requestAnimationFrame(() => {
+      const pos = replaceStart + hex.length;
+      ref.current?.focus();
+      ref.current?.setSelectionRange(pos, pos);
+      setSelection({ start: pos, end: pos });
+    });
+  }
+  return <label className="field colorMarkupField"><span>{label}</span><textarea ref={ref} value={text} onChange={e => { onChange(e.target.value); rememberCursor(e); }} onKeyUp={rememberCursor} onClick={rememberCursor} onSelect={rememberCursor} rows={rows} />
+    {showPicker ? <div className="colorChartOverlay"><b>Insert hex color</b><small>Completes the current <code>&lt;color=</code> tag.</small><div>{colorSwatches.map(([hex, name]) => <button type="button" key={hex} title={`${name} ${hex}`} onMouseDown={e => { e.preventDefault(); insertColor(hex); }}><i style={{ background: hex }}></i><span>{name}</span><code>{hex}</code></button>)}</div></div> : null}
+  </label>;
+}
 const cooldownPresets = [
   ['custom', 'Custom seconds', null],
   ['0', 'No cooldown', 0],
@@ -574,6 +650,26 @@ function CooldownField({ value, onChange }) {
 }
 function BoolField({ label, value, onChange }) { return <label className="bool"><input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} /> {label}</label>; }
 
+function XdQuestCategoryHelper({ displayName, onChange }) {
+  const parsed = parseQuestCategoryDisplayName(displayName || '');
+  const categoryOk = !!questCategoryPrefix({ QuestDisplayName: displayName || '' });
+  const update = (key, value) => {
+    const next = { ...parsed, [key]: value };
+    onChange(composeQuestCategoryDisplayName(next));
+  };
+  return <section className={`categoryHelper ${categoryOk ? 'active' : 'missing'}`}>
+    <div className="categoryHelperHead"><div><b>XDQuest category helper</b><p>Builds the plugin category prefix <code>&lt;color=#HEX&gt;Category$&lt;/color&gt;</code> while keeping raw QuestDisplayName editable below.</p></div><span>{categoryOk ? 'PLUGIN CATEGORY OK' : 'NO VALID PREFIX YET'}</span></div>
+    <div className="categoryFields">
+      <Field label="Category" value={parsed.category} onChange={v => update('category', v)} />
+      <Field label="Category color — hex only" type="color" value={/^#[0-9a-f]{6}$/i.test(parsed.categoryColor) ? parsed.categoryColor : '#00BCD4'} onChange={v => update('categoryColor', v)} />
+      <Field label="Line label" value={parsed.lineLabel} onChange={v => update('lineLabel', v)} />
+      <Field label="Line color — hex or named" value={parsed.lineColor} onChange={v => update('lineColor', v)} />
+    </div>
+    <Field label="Visible quest title" value={parsed.title} onChange={v => update('title', v)} />
+    <small>Preview: <TaggedText value={composeQuestCategoryDisplayName(parsed)} /></small>
+  </section>;
+}
+
 function useSteamItems(ids) {
   const clean = useMemo(() => [...new Set((ids || []).filter(Boolean))].slice(0, 80), [ids?.join('|')]);
   const [items, setItems] = useState({});
@@ -590,6 +686,20 @@ function useSteamItems(ids) {
   }, [clean.join(',')]);
   return { items, status };
 }
+function useXpBadges(active = true) {
+  const [state, setState] = useState({ loading: false, error: '', badges: [] });
+  useEffect(() => {
+    let cancelled = false;
+    if (!active) return;
+    setState(s => ({ ...s, loading: true, error: '' }));
+    fetch('/xp-badges/xp-badges.json')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`XP badge manifest ${r.status}`)))
+      .then(data => { if (!cancelled) setState({ loading: false, error: '', badges: data.badges || [] }); })
+      .catch(e => { if (!cancelled) setState({ loading: false, error: e.message, badges: [] }); });
+    return () => { cancelled = true; };
+  }, [active]);
+  return state;
+}
 
 function Rewards({ quest, steamItems = {} }) {
   const rewards = quest?.PrizeList || [];
@@ -603,6 +713,18 @@ function Rewards({ quest, steamItems = {} }) {
 
 const rewardFromItem = (draft, prizeType = 0) => ({ PrizeName: draft.PrizeName || draft.ItemName || 'Item reward', PrizeType: prizeType, ItemShortName: draft.ItemShortName || '', ItemAmount: Number(draft.ItemAmount) || 1, CustomItemName: draft.CustomItemName || draft.ItemName || '', ItemSkinID: Number(draft.ItemSkinID) || 0, PrizeCommand: '', CommandImageUrl: '', IsHidden: !!draft.IsHidden });
 const rewardFromCommand = (draft) => ({ PrizeName: draft.PrizeName || 'Command reward', PrizeType: 3, ItemShortName: '', ItemAmount: Number(draft.ItemAmount) || 1, CustomItemName: '', ItemSkinID: 0, PrizeCommand: draft.PrizeCommand || '', CommandImageUrl: draft.CommandImageUrl || '', IsHidden: !!draft.IsHidden });
+const normalizeXdQuestPermission = (permission = '') => {
+  const clean = String(permission || '').trim().replace(/^xdquest\./i, '').replace(/^oxide\.permission\./i, '');
+  return clean ? `XDQuest.${clean}` : 'XDQuest.permission_name';
+};
+const permissionCommandText = (action, permission) => `o.${action} user %STEAMID% ${normalizeXdQuestPermission(permission)}`;
+const permissionCommandRewardDraft = (action, permission) => ({
+  PrizeName: action === 'grant' ? 'Grant next quest permission' : 'Revoke quest permission',
+  ItemAmount: 1,
+  PrizeCommand: permissionCommandText(action, permission),
+  CommandImageUrl: '',
+  IsHidden: true
+});
 
 function ItemPicker({ onPick, onClose }) {
   const [category, setCategory] = useState('Food');
@@ -626,7 +748,7 @@ function ItemPicker({ onPick, onClose }) {
   </div></div>;
 }
 
-function AddRewardDialog({ onAdd, onClose, steamItems }) {
+function AddRewardDialog({ onAdd, onClose, steamItems, quest }) {
   const rewardTypes = [
     { id: '0', icon: '📦', title: 'Item drop', note: 'A normal Rust item reward.' },
     { id: '1', icon: '📘', title: 'Blueprint', note: 'Unlock a blueprint item.' },
@@ -636,9 +758,24 @@ function AddRewardDialog({ onAdd, onClose, steamItems }) {
   const [type, setType] = useState('0');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [draft, setDraft] = useState({ PrizeName: '', ItemShortName: '', ItemName: '', ItemAmount: 1, CustomItemName: '', ItemSkinID: 0, PrizeCommand: '', CommandImageUrl: '', IsHidden: false });
+  const [permissionDraft, setPermissionDraft] = useState(() => String(quest?.QuestPermission || '').trim());
   const activeType = rewardTypes.find(t => t.id === type) || rewardTypes[0];
+  const xpBadges = useXpBadges(type === 'Command');
   const set = (k,v) => setDraft(d => ({...d,[k]:v}));
   function pickItem(item){ setDraft(d => ({...d, ItemShortName:item.shortname, ItemName:item.name, PrizeName:d.PrizeName || item.name, CustomItemName:d.CustomItemName || item.name})); setPickerOpen(false); }
+  function pickXpBadge(badge) {
+    setDraft(d => ({
+      ...d,
+      PrizeName: badge.label,
+      ItemAmount: badge.xp,
+      PrizeCommand: `givexp %STEAMID% ${badge.xp} true`,
+      CommandImageUrl: badge.publicUrl || badge.localPath
+    }));
+  }
+  function applyPermissionCommand(action) {
+    setType('Command');
+    setDraft(d => ({ ...d, ...permissionCommandRewardDraft(action, permissionDraft) }));
+  }
   function add(){ onAdd(type === 'Command' ? rewardFromCommand(draft) : rewardFromItem(draft, Number(type))); }
   const previewTitle = draft.PrizeName || draft.CustomItemName || draft.ItemName || draft.ItemShortName || (type === 'Command' ? 'Command reward' : activeType.title);
   return <div className="modalBackdrop" onMouseDown={onClose}><div className="addRewardModal rewardBuilder" onMouseDown={e => e.stopPropagation()}>
@@ -656,8 +793,12 @@ function AddRewardDialog({ onAdd, onClose, steamItems }) {
           {draft.ItemShortName && <div className="livePreview"><b>Selected item:</b> {draft.ItemName || draft.ItemShortName}</div>}
           {Number(draft.ItemSkinID) ? <div className="livePreview"><b>Steam:</b> {steamItems[String(draft.ItemSkinID)]?.title || `skin ${draft.ItemSkinID}`}</div> : null}
         </> : <>
+          <div className="permissionCommandHelper"><div><b>Permission command helper</b><small>Use this for quest-chain unlocks. The + button already auto-adds a hidden grant reward to the source quest; this helper is for manual grant/revoke rewards.</small></div><Field label="Permission name" value={permissionDraft} onChange={setPermissionDraft} /><div className="permissionCommandActions"><button type="button" onClick={() => applyPermissionCommand('grant')}>Grant permission</button><button type="button" onClick={() => applyPermissionCommand('revoke')}>Revoke permission</button></div></div>
           <Field label="Command" value={draft.PrizeCommand} onChange={v => set('PrizeCommand', v)} textarea rows={3} />
           <div className="two"><Field label="Amount marker" type="number" value={draft.ItemAmount} onChange={v => set('ItemAmount', v)} /><Field label="Preview image URL" value={draft.CommandImageUrl} onChange={v => set('CommandImageUrl', v)} /></div>
+          <div className="xpBadgePicker"><div className="sectionHead compact"><div><h4>XP badge quick-pick</h4><small>Uses local 512×512 previews here, but writes the public image URL for exported Quest.json.</small></div><span>{xpBadges.badges.length || 0} badges</span></div>
+            {xpBadges.loading ? <p className="muted">Loading XP badges…</p> : xpBadges.error ? <p className="error">XP badges could not load: {xpBadges.error}</p> : <div className="xpBadgeGrid">{xpBadges.badges.map(badge => <button type="button" key={badge.id} className={draft.PrizeCommand === `givexp %STEAMID% ${badge.xp} true` ? 'active' : ''} onClick={() => pickXpBadge(badge)}><img src={badge.localPath} alt="" loading="lazy" /><span>{badge.label}</span></button>)}</div>}
+          </div>
         </>}
         <BoolField label="Hidden reward" value={draft.IsHidden} onChange={v => set('IsHidden', v)} />
       </section>
@@ -683,14 +824,14 @@ function RewardDrawer({ reward, index, onClose, onUpdate, onRemove, steamItems }
       <Field label="Reward Name" value={reward.PrizeName} onChange={v => onUpdate('PrizeName', v)} />
       <div className="two"><PrizeTypeField value={reward.PrizeType} onChange={v => onUpdate('PrizeType', v)} /><Field label="Amount" type="number" value={reward.ItemAmount} onChange={v => onUpdate('ItemAmount', v)} /></div>
       <BoolField label="Hidden" value={reward.IsHidden} onChange={v => onUpdate('IsHidden', v)} />
-      {reward.PrizeCommand ? <><Field label="Console Command" value={reward.PrizeCommand} onChange={v => onUpdate('PrizeCommand', v)} /><Field label="Image Url" value={reward.CommandImageUrl} onChange={v => onUpdate('CommandImageUrl', v)} /></> : <><Field label="ItemShortName" value={reward.ItemShortName} onChange={v => onUpdate('ItemShortName', v)} /><Field label="CustomItemName" value={reward.CustomItemName} onChange={v => onUpdate('CustomItemName', v)} /><Field label="ItemSkinID" type="number" value={reward.ItemSkinID} onChange={v => onUpdate('ItemSkinID', v)} /></>}
+      {reward.PrizeCommand ? <><Field label="Console Command" value={reward.PrizeCommand} onChange={v => onUpdate('PrizeCommand', v)} /><div className="permissionCommandActions drawerQuick"><button type="button" onClick={() => { const perm = String(reward.PrizeCommand || '').match(/XDQuest\.([^\s]+)/i)?.[1] || 'permission_name'; onUpdate('PrizeName', 'Grant next quest permission'); onUpdate('PrizeCommand', permissionCommandText('grant', perm)); onUpdate('IsHidden', true); }}>Make grant</button><button type="button" onClick={() => { const perm = String(reward.PrizeCommand || '').match(/XDQuest\.([^\s]+)/i)?.[1] || 'permission_name'; onUpdate('PrizeName', 'Revoke quest permission'); onUpdate('PrizeCommand', permissionCommandText('revoke', perm)); onUpdate('IsHidden', true); }}>Make revoke</button></div><Field label="Image Url" value={reward.CommandImageUrl} onChange={v => onUpdate('CommandImageUrl', v)} /></> : <><Field label="ItemShortName" value={reward.ItemShortName} onChange={v => onUpdate('ItemShortName', v)} /><Field label="CustomItemName" value={reward.CustomItemName} onChange={v => onUpdate('CustomItemName', v)} /><Field label="ItemSkinID" type="number" value={reward.ItemSkinID} onChange={v => onUpdate('ItemSkinID', v)} /></>}
       {Number(reward.ItemSkinID) ? <div className="livePreview"><b>Steam:</b> {steamItems[String(reward.ItemSkinID)]?.title || `skin ${reward.ItemSkinID}`}</div> : null}
     </div>
     <div className="drawerFoot"><button className="danger" type="button" onClick={onRemove}>Delete reward</button><button className="primary" type="button" onClick={onClose}>Done</button></div>
   </aside></div>;
 }
 
-function RewardEditor({ rewards, onChange, steamItems }) {
+function RewardEditor({ rewards, onChange, steamItems, quest }) {
   const safeRewards = rewards || [];
   const [adding, setAdding] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(null);
@@ -716,7 +857,7 @@ function RewardEditor({ rewards, onChange, steamItems }) {
       })}
     </div>}
     <RewardDrawer reward={selectedReward} index={selectedIndex ?? 0} steamItems={steamItems} onClose={() => setSelectedIndex(null)} onUpdate={(key, val) => update(selectedIndex, key, val)} onRemove={() => remove(selectedIndex)} />
-    {adding && <AddRewardDialog steamItems={steamItems} onClose={() => setAdding(false)} onAdd={(r) => { onChange([...safeRewards, r]); setSelectedIndex(safeRewards.length); setAdding(false); }} />}
+    {adding && <AddRewardDialog steamItems={steamItems} quest={quest} onClose={() => setAdding(false)} onAdd={(r) => { onChange([...safeRewards, r]); setSelectedIndex(safeRewards.length); setAdding(false); }} />}
   </section>;
 }
 
@@ -812,7 +953,7 @@ function AiBrainPanel({ draft, questContext, onApply }) {
   </section>;
 }
 
-function EditorModal({ quest, quests = [], onClose, onSave, steamItems }) {
+function EditorModal({ quest, quests = [], onClose, onSave, steamItems, xdQuestCategoryMode = false }) {
   const [draft, setDraft] = useState(() => structuredClone(quest));
   const set = (key, value) => setDraft(d => ({ ...d, [key]: value }));
   const applyAiSuggestion = (suggestion = {}) => setDraft(d => ({
@@ -830,14 +971,15 @@ function EditorModal({ quest, quests = [], onClose, onSave, steamItems }) {
     <div className="modalBody questEditLayout">
       <div className="questEditWorkspace" aria-label="Quest edit controls">
         <section className="formPanel prominent"><h3>Edit fields</h3><div className="two"><Field label="QuestID" type="number" value={draft.QuestID} onChange={v => set('QuestID', v)} /><Field label="QuestPermission — used for chains" value={draft.QuestPermission} onChange={v => set('QuestPermission', v)} /></div>
-          <Field label="QuestDisplayName" value={draft.QuestDisplayName} onChange={v => set('QuestDisplayName', v)} textarea rows={3} />
-          <Field label="QuestDescription" value={draft.QuestDescription} onChange={v => set('QuestDescription', v)} textarea rows={7} />
-          <Field label="QuestMissions" value={draft.QuestMissions} onChange={v => set('QuestMissions', v)} textarea rows={3} />
+          {xdQuestCategoryMode ? <XdQuestCategoryHelper displayName={draft.QuestDisplayName} onChange={v => set('QuestDisplayName', v)} /> : null}
+          <ColorMarkupField label="QuestDisplayName — raw override" value={draft.QuestDisplayName} onChange={v => set('QuestDisplayName', v)} rows={3} />
+          <ColorMarkupField label="QuestDescription" value={draft.QuestDescription} onChange={v => set('QuestDescription', v)} rows={7} />
+          <ColorMarkupField label="QuestMissions" value={draft.QuestMissions} onChange={v => set('QuestMissions', v)} rows={3} />
           <div className="three"><QuestTypeField value={draft.QuestType} onChange={v => set('QuestType', v)} /><Field label="Target / skin id / target" value={draft.Target} onChange={v => set('Target', v)} /><Field label="ActionCount" type="number" value={draft.ActionCount} onChange={v => set('ActionCount', v)} /></div>
           <div className="three"><CooldownField value={draft.Cooldown} onChange={v => set('Cooldown', v)} /><BoolField label="Repeatable" value={draft.IsRepeatable} onChange={v => set('IsRepeatable', v)} /><BoolField label="Return items required" value={draft.IsReturnItemsRequired} onChange={v => set('IsReturnItemsRequired', v)} /></div>
         </section>
         <AiBrainPanel draft={draft} questContext={questContext} onApply={applyAiSuggestion} />
-        <section className="formPanel questRewardsPanel"><RewardEditor rewards={draft.PrizeList || []} steamItems={steamItems} onChange={v => set('PrizeList', v)} /></section>
+        <section className="formPanel questRewardsPanel"><RewardEditor rewards={draft.PrizeList || []} steamItems={steamItems} quest={draft} onChange={v => set('PrizeList', v)} /></section>
       </div>
       <div className="questPreviewWorkspace" aria-label="Quest preview">
         <SoftRenderBoundary resetKey={resetKey} fallback={<div className="softError"><b>Preview paused</b><p>The raw edit fields are still safe. Fix or save the title markup, then the preview will recover.</p><code>{safeQuestTitle(draft) || 'Untitled quest'}</code></div>}>
@@ -862,7 +1004,7 @@ function nextQuestFrom(prev, existing) {
   const perm = String(prev.QuestPermission || '').trim();
   q.QuestPermission = perm
     ? (perm.match(/(.*?)(?:[_-]?part[_-]?)?\d+[a-z]?$/i) ? perm.replace(/(?:part[_-]?)?\d+[a-z]?$/i, m => (m.toLowerCase().includes('part') ? 'part' : '') + next) : `${perm}_part${next}`)
-    : `quest_part${next}`;
+    : uniquePermission(`${safePermissionSlug(questSeriesKey(prev) || questTitle(prev) || 'questline')}_part${next}`, existing);
   q.QuestDescription = 'Describe the next quest in this questline.';
   q.QuestMissions = 'Do <color=yellow>1</color> thing';
   q.ActionCount = 1;
@@ -887,10 +1029,10 @@ function uniquePermission(base, existing = []) {
   return candidate;
 }
 
-function permissionGrantReward(permission) {
+function permissionGrantReward(permission, label = 'Unlock sidequest') {
   const grantPermission = String(permission || '').startsWith('XDQuest.') ? permission : `XDQuest.${permission}`;
   return {
-    PrizeName: 'Unlock sidequest',
+    PrizeName: label,
     PrizeType: 3,
     ItemAmount: 1,
     ItemShortName: '',
@@ -922,9 +1064,10 @@ function sideQuestFrom(parent, existing) {
   return q;
 }
 
-function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, manualMap, setManualMap, onCreateNext, onCreateSideQuest, onApplyGridOrder, issues = [], focusRequest = 0, compactMode = false, titleOnlyMode = false }) {
+function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, manualMap, setManualMap, onCreateNext, onCreateSideQuest, onApplyGridOrder, onOpenQuestEditor, issues = [], focusRequest = 0, compactMode = false, titleOnlyMode = false }) {
   const graph = useMemo(() => buildQuestGraph(quests), [quests]);
   const shellRef = useRef(null);
+  const canvasWrapRef = useRef(null);
   const drag = useRef(null);
   const nodeDrag = useRef(null);
   const dragFrame = useRef(null);
@@ -1009,14 +1152,16 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   const positions = new Map();
   const rowHeight = titleOnlyMode ? 96 : (compactMode ? 162 : 214), colWidth = titleOnlyMode ? 184 : (compactMode ? 258 : 330), nodeWidth = titleOnlyMode ? 168 : (compactMode ? 238 : 300), nodeHeight = titleOnlyMode ? 62 : (compactMode ? 112 : 148);
   const nodeMidX = nodeWidth / 2, linkStartX = nodeWidth - 14, linkY = titleOnlyMode ? 31 : (compactMode ? 48 : 66);
+  const graphTopHeadroom = 320;
+  const graphTopY = 82 + graphTopHeadroom;
   const maxCols = Math.max(1, ...rows.map(r => r.nodes.length));
   const width = Math.max(1800, 92 + maxCols * colWidth + 420);
-  const height = Math.max(1000, 86 + rows.length * rowHeight + 260);
+  const height = Math.max(1000, 86 + graphTopHeadroom + rows.length * rowHeight + 260);
   const clampPosition = (p) => ({
     x: Math.max(24, Math.min(width - nodeWidth - 90, Number(p?.x) || 24)),
-    y: Math.max(48, Math.min(height - nodeHeight - 60, Number(p?.y) || 48)),
+    y: Math.max(24, Math.min(height - nodeHeight - 60, Number(p?.y) || 24)),
   });
-  rows.forEach((row, rowIndex) => row.nodes.forEach((n,col)=>positions.set(n.id, clampPosition(manualMap.positions?.[n.id] || {x:92+col*colWidth,y:82+rowIndex*rowHeight}))));
+  rows.forEach((row, rowIndex) => row.nodes.forEach((n,col)=>positions.set(n.id, clampPosition(manualMap.positions?.[n.id] || {x:92+col*colWidth,y:graphTopY+rowIndex*rowHeight}))));
   const renderLinks = [...layoutLinks, ...crossQuestUnlocks];
   const markerForLink = (l, backEdge, isUnlock) => {
     if (backEdge) return 'url(#arrowLoop)';
@@ -1044,10 +1189,25 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   const selectedEdgeDetail = edgeDetail(selectedEdge);
 
   function updateMap(updater){ setManualMap(m => typeof updater === 'function' ? updater(m) : updater); }
+  function defaultGraphScroll(){ return { left: 0, top: Math.max(0, Math.round((graphTopHeadroom - 96) * zoom)) }; }
+  useEffect(() => {
+    if (manualMap.topHeadroomVersion >= 1) return;
+    const rawPositions = manualMap.positions || {};
+    const migratedPositions = Object.fromEntries(Object.entries(rawPositions).map(([id, pos]) => [id, {
+      ...pos,
+      y: Math.round((Number(pos?.y) || 0) + graphTopHeadroom)
+    }]));
+    updateMap(m => ({
+      ...m,
+      topHeadroomVersion: 1,
+      positions: migratedPositions,
+      scroll: m.scroll ? { ...m.scroll, top: Math.round((Number(m.scroll.top) || 0) + graphTopHeadroom * zoom) } : defaultGraphScroll()
+    }));
+  }, [manualMap.topHeadroomVersion]);
   useEffect(() => {
     const shell = shellRef.current;
     if (!shell) return;
-    const saved = manualMap.scroll || {};
+    const saved = manualMap.scroll || defaultGraphScroll();
     const frame = requestAnimationFrame(() => {
       shell.scrollLeft = Math.max(0, Number(saved.left) || 0);
       shell.scrollTop = Math.max(0, Number(saved.top) || 0);
@@ -1103,10 +1263,69 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   }
   function nodePointerDown(e,n){ if(!manualMode) return; e.preventDefault(); e.stopPropagation(); const p=positions.get(n.id); const pt=localPoint(e); nodeDrag.current={id:n.id,dx:pt.x-p.x,dy:pt.y-p.y}; }
   function nodeClick(e,n){ e.stopPropagation(); if(connectMode){ if(!connectFrom){ setConnectFrom(n.id); return; } if(connectFrom!==n.id){ updateMap(m=>{ const links=m.links||[]; const exists=links.some(l=>String(l.source)===String(connectFrom)&&String(l.target)===String(n.id)); return exists?m:{...m,links:[...links,{source:connectFrom,target:n.id}]}; }); } setConnectFrom(null); return; } setSelected(n.quest); }
+  function nodeDoubleClick(e,n){ e.preventDefault(); e.stopPropagation(); if (connectMode) return; setSelected(n.quest); onOpenQuestEditor?.(n.quest); }
   function clearManual(){ if(confirm('Clear manual positions and links for this file?')) updateMap(m => ({...m,positions:{},links:[]})); }
-  function resetScroll(){ if(shellRef.current){ shellRef.current.scrollLeft=0; shellRef.current.scrollTop=0; updateMap(m => ({ ...m, scroll: { left: 0, top: 0 } })); } }
-  function zoomBy(delta){ updateMap(m => ({ ...m, zoom: Math.max(.55, Math.min(1.6, Number(((Number(m.zoom) || zoom) + delta).toFixed(2)))) })); }
-  function centerPoint(p){ if(shellRef.current && p){ const left=Math.max(0,p.x*zoom-220), top=Math.max(0,p.y*zoom-160); shellRef.current.scrollLeft=left; shellRef.current.scrollTop=top; updateMap(m => ({ ...m, scroll: { left: Math.round(left), top: Math.round(top) } })); } }
+  function resetScroll(){ if(shellRef.current){ const nextScroll = defaultGraphScroll(); shellRef.current.scrollLeft=nextScroll.left; shellRef.current.scrollTop=nextScroll.top; updateMap(m => ({ ...m, scroll: nextScroll })); } }
+  function clampScrollForZoom(left, top, nextZoom){
+    const shell = shellRef.current;
+    if (!shell) return { left: Math.max(0, Math.round(left)), top: Math.max(0, Math.round(top)) };
+    const wrap = canvasWrapRef.current;
+    const maxLeft = Math.max(0, (wrap?.offsetLeft || 0) + width * nextZoom - shell.clientWidth);
+    const maxTop = Math.max(0, (wrap?.offsetTop || 0) + height * nextZoom - shell.clientHeight);
+    return {
+      left: Math.max(0, Math.min(Math.round(left), maxLeft)),
+      top: Math.max(0, Math.min(Math.round(top), maxTop))
+    };
+  }
+  function graphScrollFor(anchor, nextZoom, viewOffset){
+    const wrap = canvasWrapRef.current;
+    return clampScrollForZoom(
+      (wrap?.offsetLeft || 0) + anchor.x * nextZoom - viewOffset.x,
+      (wrap?.offsetTop || 0) + anchor.y * nextZoom - viewOffset.y,
+      nextZoom
+    );
+  }
+  function applyScroll(nextScroll, nextZoom = zoom){
+    const shell = shellRef.current;
+    if (!shell) return;
+    requestAnimationFrame(() => {
+      const clamped = clampScrollForZoom(nextScroll.left, nextScroll.top, nextZoom);
+      shell.scrollLeft = clamped.left;
+      shell.scrollTop = clamped.top;
+    });
+  }
+  function zoomBy(delta){
+    const currentZoom = zoom;
+    const nextZoom = Math.max(.55, Math.min(1.6, Number((currentZoom + delta).toFixed(2))));
+    if (nextZoom === currentZoom) return;
+    const shell = shellRef.current;
+    const wrap = canvasWrapRef.current;
+    const selectedPos = selectedNode ? positions.get(selectedNode.id) : null;
+    const anchor = selectedPos
+      ? { x: selectedPos.x + nodeWidth / 2, y: selectedPos.y + nodeHeight / 2 }
+      : shell
+        ? { x: (shell.scrollLeft + shell.clientWidth / 2 - (wrap?.offsetLeft || 0)) / currentZoom, y: (shell.scrollTop + shell.clientHeight / 2 - (wrap?.offsetTop || 0)) / currentZoom }
+        : { x: width / 2, y: height / 2 };
+    const currentViewOffset = shell
+      ? { x: (wrap?.offsetLeft || 0) + anchor.x * currentZoom - shell.scrollLeft, y: (wrap?.offsetTop || 0) + anchor.y * currentZoom - shell.scrollTop }
+      : { x: 220, y: 160 };
+    const selectedAnchorVisible = !!selectedPos && shell && currentViewOffset.x >= 0 && currentViewOffset.x <= shell.clientWidth && currentViewOffset.y >= 0 && currentViewOffset.y <= shell.clientHeight;
+    const viewOffset = shell && (!selectedPos || !selectedAnchorVisible)
+      ? { x: shell.clientWidth / 2, y: shell.clientHeight / 2 }
+      : currentViewOffset;
+    const nextScroll = graphScrollFor(anchor, nextZoom, viewOffset);
+    updateMap(m => ({ ...m, zoom: nextZoom, scroll: nextScroll }));
+    applyScroll(nextScroll, nextZoom);
+  }
+  function centerPoint(p){
+    if(shellRef.current && p){
+      const anchor = { x: p.x + nodeWidth / 2, y: p.y + nodeHeight / 2 };
+      const nextScroll = graphScrollFor(anchor, zoom, { x: shellRef.current.clientWidth / 2, y: shellRef.current.clientHeight / 2 });
+      shellRef.current.scrollLeft = nextScroll.left;
+      shellRef.current.scrollTop = nextScroll.top;
+      updateMap(m => ({ ...m, scroll: nextScroll }));
+    }
+  }
   function centerOn(n){ const p=positions.get(n.id); centerPoint(p); if(n?.quest) setSelected(n.quest); }
   function centerSelected(){
     if (!selected) { alert('Select a quest first.'); return; }
@@ -1117,7 +1336,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
     if (!focusRequest || !selectedNode) return;
     const frame = requestAnimationFrame(() => centerOn(selectedNode));
     return () => cancelAnimationFrame(frame);
-  }, [focusRequest, selectedNode?.id, zoom]);
+  }, [focusRequest, selectedNode?.id]);
   function focusLink(l){ setSelectedEdge(l); const target = graph.nodes.find(n => n.id === String(l.target)); if (target) centerOn(target); }
   function connectedLineFrom(startId){
     const nodeById = new Map(filteredNodes.map(n => [n.id, n]));
@@ -1173,10 +1392,10 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
       const nodes = ordered.length ? ordered : row.nodes;
       nodes.forEach((n, col) => {
         lined.add(n.id);
-        nextPositions[n.id] = clampPosition({ x: 92 + col * colWidth, y: 82 + rowIndex * rowHeight });
+        nextPositions[n.id] = clampPosition({ x: 92 + col * colWidth, y: graphTopY + rowIndex * rowHeight });
       });
       row.nodes.filter(n => !lined.has(n.id)).forEach((n, extra) => {
-        nextPositions[n.id] = clampPosition({ x: 92 + (nodes.length + extra) * colWidth, y: 82 + rowIndex * rowHeight });
+        nextPositions[n.id] = clampPosition({ x: 92 + (nodes.length + extra) * colWidth, y: graphTopY + rowIndex * rowHeight });
       });
     });
     updateMap(m => ({...m, positions: {...(m.positions||{}), ...nextPositions}}));
@@ -1198,7 +1417,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
     <div className="zoomControls" aria-label="Graph zoom controls"><button onClick={()=>zoomBy(-.1)}>−</button><strong>{Math.round(zoom*100)}%</strong><button onClick={()=>zoomBy(.1)}>+</button></div>
     <aside className={`edgeLegend ${legendCollapsed ? 'collapsed' : ''}`} aria-label="Graph edge legend"><div className="edgeLegendHead"><b>Edge legend</b><button type="button" onClick={()=>setLegendCollapsed(v=>!v)} aria-label={legendCollapsed ? 'Show edge legend' : 'Hide edge legend'}>{legendCollapsed ? '+' : '−'}</button></div>{!legendCollapsed && <><span><i className="normal"></i><em>Name/part chain<small>— Auto: Part 1 → Part 2</small></em></span><span><i className="permission"></i><em>Permission-name match<small>— Fallback by QuestPermission name</small></em></span><span><i className="permissionGrant"></i><em>Reward grants permission<small>— PrizeCommand unlocks target</small></em></span><span><i className="unlock"></i><em>Cross-quest unlock<small>— Grant into another questline</small></em></span><span><i className="manual"></i><em>Manual link<small>— Added by you</small></em></span><span><i className="loop"></i><em>Loop/back edge<small>— Returns to earlier quest</small></em></span></>}</aside>
     {selectedEdgeDetail ? <aside className="edgeDetail" aria-label="Selected edge details"><div><b>{selectedEdgeDetail.label}</b><button onClick={()=>setSelectedEdge(null)}>×</button></div><small>{selectedEdgeDetail.strength}</small><p>{selectedEdgeDetail.why}</p><dl><dt>From</dt><dd>#{selectedEdgeDetail.link.source} · {edgeQuestTitle(selectedEdgeDetail.sourceNode)}</dd><dt>To</dt><dd>#{selectedEdgeDetail.link.target} · {edgeQuestTitle(selectedEdgeDetail.targetNode)}</dd>{selectedEdgeDetail.permission ? <><dt>Target requires</dt><dd><code>{selectedEdgeDetail.permission}</code></dd></> : null}{selectedEdgeDetail.grantCommand ? <><dt>Source reward command</dt><dd><code>{selectedEdgeDetail.grantCommand}</code></dd></> : null}<dt>Internal reason</dt><dd><code>{selectedEdgeDetail.link.reason || 'manual'}</code></dd></dl></aside> : null}
-    <div className="graphCanvasWrap" style={{ width: width*zoom, height: height*zoom }}><div className="graphCanvas" style={{ width, height, transform:`scale(${zoom})` }}>
+    <div ref={canvasWrapRef} className="graphCanvasWrap" style={{ width: width*zoom, height: height*zoom }}><div className="graphCanvas" style={{ width, height, transform:`scale(${zoom})` }}>
       <svg className="wires" width={width} height={height}>
         <defs>
           <marker id="arrowQuest" viewBox="0 0 10 10" refX="8.6" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
@@ -1210,7 +1429,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
         </defs>
         {renderLinks.map((l,i)=>{ const a=positions.get(String(l.source)), b=positions.get(String(l.target)); if(!a||!b)return null; const isUnlock=l.reason==='cross-quest-unlock'; const backEdge=!isUnlock && b.x<=a.x; const className=`${l.manual?'manual':l.reason} ${backEdge?'loopEdge':''} ${selectedEdge && edgeKey(selectedEdge)===edgeKey(l)?'selectedEdge':''}`; const marker=markerForLink(l,backEdge,isUnlock); if(backEdge){ const x1=a.x+nodeMidX,y1=a.y+6,x2=b.x+nodeMidX,y2=b.y+6,arch=Math.min(y1,y2)-84,labelX=(x1+x2)/2,labelY=arch-9,arrowX=(x1+x2)/2,arrowY=arch+20; return <g key={i} className="wireGroup" onClick={(e)=>{e.stopPropagation();focusLink(l);}}><path markerEnd={marker} className={className} d={`M ${x1} ${y1} C ${x1} ${arch}, ${x2} ${arch}, ${x2} ${y2}`} /><text className="wireArrow loopArrow" x={arrowX} y={arrowY} textAnchor="middle">↩</text><text className="loopDirection" x={labelX} y={labelY} textAnchor="middle">to #{String(l.target).replace(/^access:/,'')}</text></g>; } const x1=a.x+linkStartX,y1=a.y+linkY,x2=b.x+8,y2=b.y+linkY; const mid=Math.max(90,Math.abs(x2-x1)/2),arrowX=(x1+x2)/2,arrowY=(y1+y2)/2-9,angle=Math.atan2(y2-y1,x2-x1)*180/Math.PI; return <g key={i} className="wireGroup" onClick={(e)=>{e.stopPropagation();focusLink(l);}}><path markerEnd={marker} className={className} d={`M ${x1} ${y1} C ${x1+mid} ${y1-18}, ${x2-mid} ${y2+18}, ${x2} ${y2}`} /><text className={`wireArrow ${isUnlock?'externalArrow':(l.manual?'manualArrow':l.reason)}`} x={arrowX} y={arrowY} textAnchor="middle" transform={`rotate(${angle} ${arrowX} ${arrowY})`}>{isUnlock?'⇢':'➜'}</text>{isUnlock?<text className="unlockDirection" x={arrowX} y={arrowY+22} textAnchor="middle">cross unlock</text>:null}</g>;})}
       </svg>
-      {rows.map((row,rowIndex)=>{ const matchedCount=row.nodes.filter(n=>!contextVisible.has(n.id)).length; const contextCount=row.nodes.length-matchedCount; const oneTimeStarts=row.nodes.filter(n=>!incoming.has(n.id)&&!n.quest?.IsRepeatable).length; const repeatables=row.nodes.filter(n=>n.quest?.IsRepeatable).length; return <div className="clusterLabel" key={row.key} style={{top:26+rowIndex*rowHeight,left:22}}><b>{row.group}</b><span>{searchText ? `${matchedCount} match${matchedCount===1?'':'es'}` : `${row.nodes.length} quests`}</span>{contextCount ? <em className="contextTag">{contextCount} connected outside search</em> : null}{!searchText && oneTimeStarts ? <em>{oneTimeStarts} one-time start{oneTimeStarts>1?'s':''}</em> : null}{!searchText && repeatables ? <em>{repeatables} repeatable</em> : null}{row.loopCount ? <em className="loopTag">loop</em> : null}</div>; })}
+      {rows.map((row,rowIndex)=>{ const matchedCount=row.nodes.filter(n=>!contextVisible.has(n.id)).length; const contextCount=row.nodes.length-matchedCount; const oneTimeStarts=row.nodes.filter(n=>!incoming.has(n.id)&&!n.quest?.IsRepeatable).length; const repeatables=row.nodes.filter(n=>n.quest?.IsRepeatable).length; return <div className="clusterLabel" key={row.key} style={{top:graphTopHeadroom+26+rowIndex*rowHeight,left:22}}><b>{row.group}</b><span>{searchText ? `${matchedCount} match${matchedCount===1?'':'es'}` : `${row.nodes.length} quests`}</span>{contextCount ? <em className="contextTag">{contextCount} connected outside search</em> : null}{!searchText && oneTimeStarts ? <em>{oneTimeStarts} one-time start{oneTimeStarts>1?'s':''}</em> : null}{!searchText && repeatables ? <em>{repeatables} repeatable</em> : null}{row.loopCount ? <em className="loopTag">loop</em> : null}</div>; })}
       {rows.map(row=>{
         if (searchText || titleOnlyMode) return null;
         const summaryGroups = [
@@ -1224,8 +1443,8 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
           return p ? <div key={`summary-${row.key}-${g.key}`} style={{left:p.x+nodeWidth+30,top:p.y+18+idx*(compactMode?58:72),position:'absolute'}}><QuestlineSummaryBox nodes={g.nodes} externalCount={unlockCount} title={g.title}/></div> : null;
         });
       })}
-      {filteredNodes.map(n=>{ const p=positions.get(n.id); const isContext=contextVisible.has(n.id); const firstSkin=titleOnlyMode ? null : extractSkinIds(n.quest).map(id=>steamItems[id]).find(Boolean); const rewards=titleOnlyMode ? [] : rewardSummary(n.quest.PrizeList).slice(0,2); const isLast=!outgoing.has(n.id); const issueCount=issueCounts[String(n.quest.QuestID)] || 0; const isStart=!incoming.has(n.id); const isRepeatable=!!n.quest?.IsRepeatable; const loopReturn=isRepeatable&&incoming.has(n.id); return <React.Fragment key={n.id}><button onMouseDown={e=>nodePointerDown(e,n)} onClick={e=>nodeClick(e,n)} className={'node '+(titleOnlyMode?'titleOnlyNode ':'')+(selected?.QuestID===n.quest.QuestID?'selected ':'')+(connectFrom===n.id?'connectFrom ':'')+(manualMode?'movable ':'')+(isRepeatable?'repeatable ':'')+(loopReturn?'loopReturn ':'')+(isContext?'searchContext ':'')} style={{left:p.x,top:p.y}}>
-        {!titleOnlyMode && <span className="nodeFlags">{isContext?<span className="flag context">connected outside search</span>:null}{isStart&&!isRepeatable?<span className="flag start">one-time start</span>:null}{isRepeatable?<span className="flag repeat">repeatable</span>:null}{loopReturn?<span className="flag loop">loop return</span>:null}</span>}{issueCount ? <span className="nodeBadge">{titleOnlyMode ? issueCount : `${issueCount} issues`}</span> : null}{firstSkin?.preview && <img className="nodeSkin" src={firstSkin.preview}/>}<span className="nodeId">#{n.id}{titleOnlyMode ? '' : ` · ${n.group}${n.part!=null?` · Part ${n.part}`:''}`}</span><TaggedText className="nodeTitle" value={questTitle(n.quest)}/>{!titleOnlyMode && <><small><TaggedText value={n.quest.QuestMissions}/></small><span className="meta">{questTypeName(n.quest.QuestType)} · perm {n.quest.QuestPermission || '—'} · rewards {(n.quest.PrizeList||[]).length}</span>{rewards.length?<span className="nodeRewards">🏆 {rewards.join(' · ')}</span>:null}</>}</button>{!isContext && !titleOnlyMode && <button className="sideQuestPlus" title={`Add sidequest from #${n.id}`} style={{left:p.x+nodeWidth-34,top:p.y+(compactMode?76:108)}} onClick={(e)=>{e.stopPropagation();onCreateSideQuest?.(n.quest);}}>↳+</button>}{isLast && !isContext && !titleOnlyMode && <button className="linePlus" title="Add next quest in line" style={{left:p.x+nodeWidth,top:p.y+(compactMode?34:48)}} onClick={(e)=>{e.stopPropagation();onCreateNext(n.quest);}}>+</button>}</React.Fragment>})}
+      {filteredNodes.map(n=>{ const p=positions.get(n.id); const isContext=contextVisible.has(n.id); const firstSkin=titleOnlyMode ? null : extractSkinIds(n.quest).map(id=>steamItems[id]).find(Boolean); const rewards=titleOnlyMode ? [] : rewardSummary(n.quest.PrizeList).slice(0,2); const isLast=!outgoing.has(n.id); const issueCount=issueCounts[String(n.quest.QuestID)] || 0; const isStart=!incoming.has(n.id); const isRepeatable=!!n.quest?.IsRepeatable; const loopReturn=isRepeatable&&incoming.has(n.id); return <React.Fragment key={n.id}><button onMouseDown={e=>nodePointerDown(e,n)} onClick={e=>nodeClick(e,n)} onDoubleClick={e=>nodeDoubleClick(e,n)} className={'node '+(titleOnlyMode?'titleOnlyNode ':'')+(selected?.QuestID===n.quest.QuestID?'selected ':'')+(connectFrom===n.id?'connectFrom ':'')+(manualMode?'movable ':'')+(isRepeatable?'repeatable ':'')+(loopReturn?'loopReturn ':'')+(isContext?'searchContext ':'')} style={{left:p.x,top:p.y}} title="Click to select · double-click to fullscreen edit">
+        {!titleOnlyMode && <span className="nodeFlags">{isContext?<span className="flag context">connected outside search</span>:null}{isStart&&!isRepeatable?<span className="flag start">one-time start</span>:null}{isRepeatable?<span className="flag repeat">repeatable</span>:null}{loopReturn?<span className="flag loop">loop return</span>:null}</span>}{issueCount ? <span className="nodeBadge">{titleOnlyMode ? issueCount : `${issueCount} issues`}</span> : null}{firstSkin?.preview && <img className="nodeSkin" src={firstSkin.preview}/>}<span className="nodeId">#{n.id}{titleOnlyMode ? '' : ` · ${n.group}${n.part!=null?` · Part ${n.part}`:''}`}</span><TaggedText className="nodeTitle" value={questTitle(n.quest)}/>{!titleOnlyMode && <><small><TaggedText value={n.quest.QuestMissions}/></small><span className="meta">{questTypeName(n.quest.QuestType)} · perm {n.quest.QuestPermission || '—'} · rewards {(n.quest.PrizeList||[]).length}</span>{rewards.length?<span className="nodeRewards">🏆 {rewards.join(' · ')}</span>:null}</>}</button>{!isContext && !titleOnlyMode && <button className="sideQuestPlus" title={`Add sidequest from #${n.id}`} style={{left:p.x+nodeWidth-34,top:p.y+(compactMode?76:108)}} onClick={(e)=>{e.stopPropagation();onCreateSideQuest?.(n.quest);}}>↳+</button>}{isLast && !isContext && !titleOnlyMode && <button className="linePlus" title="Add next quest in line" style={{left:p.x+nodeWidth,top:p.y+(compactMode?34:48)}} onClick={(e)=>{e.stopPropagation();onCreateNext(n.quest, { x: p.x + colWidth, y: p.y });}}>+</button>}</React.Fragment>})}
     </div></div></div>;
 }
 
@@ -1239,11 +1458,11 @@ function QuestInspector({ quest, baselineQuest, steamItems, issues = [], onPatch
     <div className="badges">{selectedIssues.length ? selectedIssues.slice(0, 6).map((i, idx) => <span className={`badge ${i.severity}`} key={idx}>{i.field}: {i.message}</span>) : <span className="badge ok">No local issues</span>}{changedFields.length ? <span className="badge changed">{changedFields.length} changed fields</span> : <span className="badge clean">No field changes</span>}</div>
     {changedFields.length ? <div className="changedFields"><b>Changed since load/download</b><div>{changedFields.slice(0, 10).map(field => <span key={field}>{field}</span>)}{changedFields.length > 10 ? <span>+{changedFields.length - 10} more</span> : null}</div></div> : null}
     <div className="quickGrid"><p><b>ID:</b> {quest.QuestID}</p><p><b>Group:</b> {questGroup(quest)}</p><p><b>Series:</b> {questSeriesKey(quest)}</p><p><b>Type:</b> {quest.QuestType} — {questTypeName(quest.QuestType)}</p></div>
-    <Field label="QuestDisplayName" value={quest.QuestDisplayName} onChange={v => patch('QuestDisplayName', v)} textarea rows={3} />
+    <ColorMarkupField label="QuestDisplayName" value={quest.QuestDisplayName} onChange={v => patch('QuestDisplayName', v)} rows={3} />
     <div className="livePreview"><b>Preview:</b> <TaggedText value={questTitle(quest)} /></div>
     <div className="two"><Field label="Permission" value={quest.QuestPermission} onChange={v => patch('QuestPermission', v)} /><Field label="ActionCount" type="number" value={quest.ActionCount} onChange={v => patch('ActionCount', v)} /></div>
-    <Field label="Mission" value={quest.QuestMissions} onChange={v => patch('QuestMissions', v)} textarea rows={3} />
-    <Field label="Description" value={quest.QuestDescription} onChange={v => patch('QuestDescription', v)} textarea rows={5} />
+    <ColorMarkupField label="Mission" value={quest.QuestMissions} onChange={v => patch('QuestMissions', v)} rows={3} />
+    <ColorMarkupField label="Description" value={quest.QuestDescription} onChange={v => patch('QuestDescription', v)} rows={5} />
     <h3>Rewards</h3><Rewards quest={quest} steamItems={steamItems}/>
     <h3>Steam skins</h3><div className="skinGrid">{extractSkinIds(quest).map(id=>{const item=steamItems[id]; return <a className="skin" href={item?.url || `https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`} target="_blank" key={id}>{item?.preview?<img src={item.preview}/>:<div className="noImg">...</div>}<b>{item?.title || `Skin ${id}`}</b><span>ID {id}</span></a>})}</div>
   </aside>;
@@ -1310,13 +1529,15 @@ function SaveInfoOverlay({ fileName, savedAt, sourceBaseName, backups = [], onCr
   </section></div>;
 }
 
-function SettingsView({ quests, baselineQuests = [], graph, manualMap, mapSteamStatus, issues = [], backups = [], fileName, fileStatus, fileNeedsDownload, onDownloadJson, onDownloadMap, onNewQuest, onShowGraph, onOpenQuest, onSearchRelated }) {
+function SettingsView({ quests, baselineQuests = [], graph, manualMap, mapSteamStatus, issues = [], backups = [], fileName, fileStatus, fileNeedsDownload, xdQuestCategoryMode = false, setXdQuestCategoryMode, onDownloadJson, onDownloadMap, onNewQuest, onShowGraph, onOpenQuest, onSearchRelated }) {
   const errors = issues.filter(i => i.severity === 'error').length;
   const warns = issues.filter(i => i.severity === 'warn').length;
   const manualCount = (manualMap.links || []).length + Object.keys(manualMap.positions || {}).length;
   const ready = quests.length > 0 && errors === 0;
   const diff = exportDiffSummary(quests, baselineQuests);
   const chainIssues = brokenChainIssues(graph);
+  const categoryPrefixCount = quests.filter(q => questCategoryPrefix(q)).length;
+  const categoryNames = [...new Set(quests.map(q => questCategoryPrefix(q)?.name).filter(Boolean))].sort();
   const chainWarns = chainIssues.filter(i => i.severity === 'warn').length;
   const diffItems = [
     { label: 'Added quests', value: diff.added.length, detail: diff.added.slice(0, 3).map(q => `#${q.QuestID}`).join(', ') || 'None', rows: diff.added.map(q => ({ quest: q, fields: ['new quest'], kind: 'added' })) },
@@ -1335,6 +1556,7 @@ function SettingsView({ quests, baselineQuests = [], graph, manualMap, mapSteamS
   return <section className="workspace">
     <div className="viewHead"><h2>Settings & export</h2><p>Export a clean Quest.json and save map layout as a separate sidecar file.</p></div>
     <div className="settingsGrid"><div className="statCard"><b>{quests.length}</b><span>quests</span></div><div className="statCard"><b>{graph.links.length}</b><span>auto chains</span></div><div className="statCard"><b>{(manualMap.links||[]).length}</b><span>manual links</span></div><div className="statCard"><b>{chainIssues.length}</b><span>chain helper notes</span></div><div className="statCard"><b>{mapSteamStatus || '—'}</b><span>Steam skin cache</span></div></div>
+    <section className={`categoryModePanel ${xdQuestCategoryMode ? 'active' : ''}`}><div><h3>XDQuest category-prefix helper</h3><p>Your custom XDQuest reads a category only from a leading <code>&lt;color=#HEX&gt;Category$&lt;/color&gt;</code> prefix in <code>QuestDisplayName</code>. This toggle shows helper fields in fullscreen edit; raw QuestDisplayName remains editable.</p><small>{categoryPrefixCount}/{quests.length} quests currently have valid plugin category prefixes{categoryNames.length ? ` · ${categoryNames.slice(0, 12).join(', ')}${categoryNames.length > 12 ? '…' : ''}` : ''}</small></div><label className="toggleLine"><input type="checkbox" checked={!!xdQuestCategoryMode} onChange={e => setXdQuestCategoryMode?.(e.target.checked)} /> Show category helper in quest editor</label></section>
     <section className={`readinessPanel ${ready?'ready':'blocked'}`}><div><h3>Export readiness</h3><p>{ready ? 'Ready for a clean Quest.json export. Review warnings and map sidecar notes if needed.' : 'Not ready for a clean handoff yet. Fix or intentionally accept the items below.'}</p></div><b>{ready ? 'READY' : 'CHECK FIRST'}</b><div className="readinessList">{checklist.map(item => <div className={item.ok?'ok':'warn'} key={item.label}><span>{item.ok?'✓':'!'}</span><p><b>{item.label}</b><small>{item.detail}</small></p></div>)}</div></section>
     <section className={`chainHelper ${chainWarns ? 'blocked' : 'clean'}`}><div><h3>Broken-chain helper</h3><p>{chainIssues.length ? 'Potential chain problems found from parts, required permissions, and reward grants. Click a quest to inspect it or show it on the graph.' : 'No obvious missing Part 1 links, missing grantors, unused grants, or ambiguous grants found.'}</p></div><b>{chainWarns ? `${chainWarns} CHECK` : 'OK'}</b>{chainIssues.length ? <div className="chainIssueList">{chainIssues.slice(0, 16).map((issue, i) => <article key={`${issue.type}-${issue.quest?.QuestID || 'map'}-${i}`} className={issue.severity}><span>{issue.severity}</span><div><b>{issue.title}</b><small>{issue.quest ? <>#{issue.quest.QuestID} · <TaggedText value={questTitle(issue.quest)} /></> : 'Graph metadata'} · {issue.detail}</small></div>{issue.quest ? <div className="rowActions"><button onClick={() => onOpenQuest?.(issue.quest)}>Open</button><button onClick={() => onShowGraph?.(issue.quest)}>Show graph</button><button onClick={() => onSearchRelated?.(chainIssueSearchText(issue))}>Search related</button></div> : null}</article>)}</div> : null}</section>
     <section className={`exportPreview ${diff.clean ? 'clean' : 'dirty'}`}><div><h3>Export preview</h3><p>{diff.clean ? 'No Quest.json data changes compared with the latest loaded/downloaded baseline.' : 'These are the Quest.json changes that will be included in the next download. Click rows to inspect or jump to graph before exporting.'}</p></div><b>{diff.clean ? 'NO DATA CHANGES' : 'CHANGES PENDING'}</b><div className="diffGrid">{diffItems.map(item => <article key={item.label} className={item.value ? 'dirty' : 'clean'}><strong>{item.value}</strong><span>{item.label}</span><small>{item.detail}</small></article>)}</div>{diff.topFields.length ? <div className="diffFields"><b>Most changed fields</b>{diff.topFields.map(([field, count]) => <span key={field}>{field} × {count}</span>)}</div> : null}{diffItems.some(item => item.rows.length) ? <div className="diffDetails"><b>Diff details</b>{diffItems.flatMap(item => item.rows.slice(0, 8).map((row, idx) => <article key={`${item.label}-${row.quest?.QuestID}-${idx}`} className={row.kind}><span>{item.label}</span><div><b>#{row.quest?.QuestID} · <TaggedText value={questTitle(row.quest)} /></b><small>{row.fields.slice(0, 8).join(', ')}</small>{row.kind === 'changed' ? <div className="fieldDiffs">{row.fields.slice(0, 4).map(field => <div key={field}><span>{field}</span><code>Before: {formatDiffValue(row.before?.[field])}</code><code>After: {formatDiffValue(row.quest?.[field])}</code></div>)}</div> : null}</div><div className="rowActions"><button onClick={() => onOpenQuest?.(row.quest)} disabled={row.kind === 'removed'}>{row.kind === 'removed' ? 'Removed' : 'Open'}</button><button onClick={() => onShowGraph?.(row.quest)} disabled={row.kind === 'removed'}>Show graph</button></div></article>))}</div> : null}</section>
@@ -1356,6 +1578,7 @@ function App() {
   const [activeTab, setActiveTab] = useState(() => initial.activeTab || 'graph');
   const [compactMode, setCompactMode] = useState(() => !!initial.compactMode);
   const [titleOnlyMode, setTitleOnlyMode] = useState(() => !!initial.titleOnlyMode);
+  const [xdQuestCategoryMode, setXdQuestCategoryMode] = useState(() => initial.xdQuestCategoryMode ?? (initial.quests || []).some(q => questCategoryPrefix(q)));
   const [showSaveInfo, setShowSaveInfo] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(() => initial.savedAt || '');
   const [lastDownloadedAt, setLastDownloadedAt] = useState(() => initial.downloadedAt || '');
@@ -1381,14 +1604,14 @@ function App() {
   useEffect(()=>{
     if (!quests.length || !fileName || fileName === 'no file loaded') return;
     const savedAt = new Date().toISOString();
-    const result = saveAutosaveSnapshot({ quests, baselineQuests, fileName, sourceBaseName, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, undoStack: undoStack.slice(0, 20), savedAt, downloadedAt: lastDownloadedAt, lastDownloadedKey });
+    const result = saveAutosaveSnapshot({ quests, baselineQuests, fileName, sourceBaseName, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, undoStack: undoStack.slice(0, 20), savedAt, downloadedAt: lastDownloadedAt, lastDownloadedKey });
     if (result.ok) setLastSavedAt(result.savedAt);
-  }, [quests, baselineQuests, fileName, sourceBaseName, manualMap, selected?.QuestID, activeTab, query, groupFilter, compactMode, titleOnlyMode, undoStack, lastDownloadedAt, lastDownloadedKey]);
+  }, [quests, baselineQuests, fileName, sourceBaseName, manualMap, selected?.QuestID, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, undoStack, lastDownloadedAt, lastDownloadedKey]);
   function persistAutosaveNow(overrides = {}){
     const next = {
       quests, baselineQuests, fileName, sourceBaseName, manualMap,
       selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter,
-      compactMode, titleOnlyMode, undoStack: undoStack.slice(0, 20),
+      compactMode, titleOnlyMode, xdQuestCategoryMode, undoStack: undoStack.slice(0, 20),
       savedAt: new Date().toISOString(), downloadedAt: lastDownloadedAt, lastDownloadedKey,
       ...overrides
     };
@@ -1398,11 +1621,11 @@ function App() {
     }
     return next;
   }
-  async function loadText(text,name){ const parsed=JSON.parse(text); if(!Array.isArray(parsed)) throw new Error('Quest.json must be an array of quest objects'); setQuests(parsed); setBaselineQuests(parsed); setFileName(name); setSourceBaseName(baseNameFromFile(name)); setSelected(parsed[0]||null); setGroupFilter(''); setActiveTab('graph'); setUndoStack([]); try{ setManualMap(JSON.parse(localStorage.getItem(mapKey(name)) || '{"positions":{},"links":[]}')); }catch{ setManualMap({positions:{},links:[]}); } }
+  async function loadText(text,name){ const parsed=JSON.parse(text); if(!Array.isArray(parsed)) throw new Error('Quest.json must be an array of quest objects'); setQuests(parsed); setBaselineQuests(parsed); setFileName(name); setSourceBaseName(baseNameFromFile(name)); setSelected(parsed[0]||null); setGroupFilter(''); setActiveTab('graph'); setUndoStack([]); setXdQuestCategoryMode(parsed.some(q => questCategoryPrefix(q))); try{ setManualMap(JSON.parse(localStorage.getItem(mapKey(name)) || '{"positions":{},"links":[]}')); }catch{ setManualMap({positions:{},links:[]}); } }
   async function onFile(e){ const file=e.target.files?.[0]; if(!file)return; try{ await loadText(await file.text(),file.name); }catch(err){ alert('JSON error: '+err.message); } }
   function refreshGraphView(){ setGraphRevision(v => v + 1); }
   function captureUndoState(label){
-    return { label, createdAt: Date.now(), quests: structuredClone(quests), baselineQuests: structuredClone(baselineQuests), manualMap: structuredClone(manualMap), fileName, sourceBaseName, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, lastDownloadedAt, lastDownloadedKey };
+    return { label, createdAt: Date.now(), quests: structuredClone(quests), baselineQuests: structuredClone(baselineQuests), manualMap: structuredClone(manualMap), fileName, sourceBaseName, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, lastDownloadedAt, lastDownloadedKey };
   }
   function pushUndo(label){
     if (!quests.length) return;
@@ -1425,6 +1648,7 @@ function App() {
     setGroupFilter(snapshot.groupFilter || '');
     setCompactMode(!!snapshot.compactMode);
     setTitleOnlyMode(!!snapshot.titleOnlyMode);
+    setXdQuestCategoryMode(snapshot.xdQuestCategoryMode ?? (snapshot.quests || []).some(q => questCategoryPrefix(q)));
     setLastDownloadedAt(snapshot.lastDownloadedAt || '');
     setLastDownloadedKey(snapshot.lastDownloadedKey || '');
     setEditing(null);
@@ -1451,7 +1675,25 @@ function App() {
   }
   function patchQuest(q){ pushUndo(`Edit quest #${q.QuestID}`); setQuests(list=>list.map(x=>x.QuestID===q.QuestID?q:x)); setSelected(q); refreshGraphView(); }
   function createNew(){ setEditing(newQuestTemplate(quests)); }
-  function createNextQuest(prev){ pushUndo(`Create next quest after #${prev.QuestID}`); const q=nextQuestFrom(prev, quests); setQuests(list=>[...list,q]); setSelected(q); setEditing(q); const prevId=String(prev.QuestID), nextId=String(q.QuestID); setManualMap(m=>({...m,links:[...(m.links||[]),{source:prevId,target:nextId}]})); refreshGraphView(); }
+  function createNextQuest(prev, sourcePosition){
+    pushUndo(`Create next quest after #${prev.QuestID}`);
+    const q=nextQuestFrom(prev, quests);
+    const prevId=String(prev.QuestID), nextId=String(q.QuestID);
+    const reward = permissionGrantReward(q.QuestPermission, `Unlock next quest #${nextId}`);
+    const rewardCommand = String(reward.PrizeCommand || '').toLowerCase();
+    setQuests(list=>list.map(x=>String(x.QuestID)===prevId ? {
+      ...x,
+      PrizeList: (x.PrizeList || []).some(r => String(r?.PrizeCommand || '').toLowerCase() === rewardCommand) ? (x.PrizeList || []) : [...(x.PrizeList || []), reward]
+    } : x).concat(q));
+    setSelected(q);
+    setEditing(q);
+    setManualMap(m=>({
+      ...m,
+      links:[...(m.links||[]),{source:prevId,target:nextId}],
+      positions: sourcePosition ? { ...(m.positions || {}), [nextId]: sourcePosition } : (m.positions || {})
+    }));
+    refreshGraphView();
+  }
   function createSideQuest(parent){
     if (!parent) return;
     pushUndo(`Create sidequest from #${parent.QuestID}`);
@@ -1467,7 +1709,7 @@ function App() {
   function createLocalBackup(reason = 'Manual snapshot'){
     if (!quests.length) { alert('Load Quest.json before creating a backup snapshot.'); return; }
     const createdAt = new Date().toISOString();
-    const snapshot = { id: `backup-${Date.now()}`, createdAt, reason, fileName, sourceBaseName, quests, baselineQuests, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, questCount: quests.length };
+    const snapshot = { id: `backup-${Date.now()}`, createdAt, reason, fileName, sourceBaseName, quests, baselineQuests, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, questCount: quests.length };
     setLocalBackups(list => [snapshot, ...list].slice(0, 5));
   }
   function restoreLocalBackup(snapshot){
@@ -1485,6 +1727,7 @@ function App() {
     setGroupFilter(snapshot.groupFilter || '');
     setCompactMode(!!snapshot.compactMode);
     setTitleOnlyMode(!!snapshot.titleOnlyMode);
+    setXdQuestCategoryMode(snapshot.xdQuestCategoryMode ?? (snapshot.quests || []).some(q => questCategoryPrefix(q)));
     setLastDownloadedAt('');
     setLastDownloadedKey('');
     refreshGraphView();
@@ -1520,11 +1763,11 @@ function App() {
     const status = fileNeedsDownload ? 'needs download' : (quests.length ? 'downloaded' : 'empty');
     document.title = `${fileNeedsDownload ? '● ' : ''}Quest Studio ${APP_VERSION} — ${name} — ${status}`;
   }, [fileName, fileNeedsDownload, quests.length]);
-  const workspace = activeTab === 'changelog' ? <ChangelogView/> : !quests.length ? <div className="empty"><h2>Upload Quest.json</h2><p>The file is kept in memory. Manual positions/links are saved locally per filename and can be exported separately.</p></div> : activeTab === 'graph' ? <Graph quests={quests} selected={selected} setSelected={setSelected} groupFilter={groupFilter} query={query} steamItems={steamItems} manualMap={manualMap} setManualMap={setManualMap} onCreateNext={createNextQuest} onCreateSideQuest={createSideQuest} onApplyGridOrder={applyGridOrderToJson} issues={issues} focusRequest={graphFocusRequest} compactMode={compactMode} titleOnlyMode={titleOnlyMode}/> : activeTab === 'list' ? <QuestListView quests={quests} selected={selected} setSelected={setSelected} onShowGraph={focusQuestInGraph} query={query}/> : activeTab === 'validation' ? <ValidationView issues={issues} setSelected={focusQuestInGraph} selected={selected}/> : <SettingsView quests={quests} baselineQuests={baselineQuests} graph={graph} manualMap={manualMap} mapSteamStatus={mapSteamStatus} issues={issues} backups={localBackups} fileName={fileName} fileStatus={fileStatus} fileNeedsDownload={fileNeedsDownload} onDownloadJson={downloadJson} onDownloadMap={downloadMap} onNewQuest={createNew} onShowGraph={focusQuestInGraph} onOpenQuest={openQuestInspector} onSearchRelated={searchRelated}/>;
+  const workspace = activeTab === 'changelog' ? <ChangelogView/> : !quests.length ? <div className="empty"><h2>Upload Quest.json</h2><p>The file is kept in memory. Manual positions/links are saved locally per filename and can be exported separately.</p></div> : activeTab === 'graph' ? <Graph quests={quests} selected={selected} setSelected={setSelected} groupFilter={groupFilter} query={query} steamItems={steamItems} manualMap={manualMap} setManualMap={setManualMap} onCreateNext={createNextQuest} onCreateSideQuest={createSideQuest} onApplyGridOrder={applyGridOrderToJson} onOpenQuestEditor={setEditing} issues={issues} focusRequest={graphFocusRequest} compactMode={compactMode} titleOnlyMode={titleOnlyMode}/> : activeTab === 'list' ? <QuestListView quests={quests} selected={selected} setSelected={setSelected} onShowGraph={focusQuestInGraph} query={query}/> : activeTab === 'validation' ? <ValidationView issues={issues} setSelected={focusQuestInGraph} selected={selected}/> : <SettingsView quests={quests} baselineQuests={baselineQuests} graph={graph} manualMap={manualMap} mapSteamStatus={mapSteamStatus} issues={issues} backups={localBackups} fileName={fileName} fileStatus={fileStatus} fileNeedsDownload={fileNeedsDownload} xdQuestCategoryMode={xdQuestCategoryMode} setXdQuestCategoryMode={setXdQuestCategoryMode} onDownloadJson={downloadJson} onDownloadMap={downloadMap} onNewQuest={createNew} onShowGraph={focusQuestInGraph} onOpenQuest={openQuestInspector} onSearchRelated={searchRelated}/>;
   return <main className={`${compactMode ? 'compactMode' : 'comfortMode'} ${titleOnlyMode ? 'titleOnlyMode' : ''}`}><header><div className="brandBlock"><img className="brandLogo" src="/12g-logo.jpg" alt="12G" /><div><h1>Quest Studio <span className="appVersion">{APP_VERSION}</span></h1><p>Local XDQuest editor with a visual quest graph, inspector, validation, and safe JSON export.</p></div></div><div className="actions"><input ref={fileRef} type="file" accept=".json,application/json" onChange={onFile}/><button onClick={()=>fileRef.current.click()}>Load Quest.json</button><button className="primary" disabled={!quests.length} onClick={downloadJson}>Save file / Download Quest.json</button><button disabled={!quests.length} onClick={downloadMap}>Download map</button><button onClick={()=>setShowSaveInfo(true)}>Save info</button></div></header>
     <section className="tabs">{tabs.map(([id,label]) => <button key={id} className={activeTab===id?'active':''} onClick={()=>setActiveTab(id)}>{label}</button>)}</section>
     <section className="toolbar"><b>{fileName}</b><span>{quests.length} quests · {graph.links.length} auto chains · {(manualMap.links||[]).length} manual · autosaves instantly{lastSavedAt ? ` · last ${new Date(lastSavedAt).toLocaleTimeString()}` : ''} · <em className={fileNeedsDownload?'fileDirty':'fileClean'}>{fileStatus}</em> · {mapSteamStatus}</span><button className="undoButton" disabled={!undoStack.length} title={undoStack[0] ? `Undo: ${undoStack[0].label}` : 'Nothing to undo'} onClick={undoLastAction}>↶ Undo{undoStack[0] ? `: ${undoStack[0].label}` : ''}</button><input placeholder="Search quest, ID, text…" value={query} onChange={e=>setQuery(e.target.value)}/><select value={groupFilter} onChange={e=>setGroupFilter(e.target.value)}><option value="">All groups</option>{graph.groups.map(g=><option key={g}>{g}</option>)}</select><button className={compactMode?'active densityToggle':'densityToggle'} onClick={()=>setCompactMode(v=>!v)}>{compactMode?'Compact on':'Comfort mode'}</button><button className={titleOnlyMode?'active densityToggle':'densityToggle'} onClick={()=>setTitleOnlyMode(v=>!v)}>{titleOnlyMode?'Graph boxes: title only':'Graph boxes: full'}</button><button onClick={createNew}>+ New quest</button></section>
-    <div className="layout"><section className="mainPanel">{workspace}</section><QuestInspector quest={selected} baselineQuest={selected?.QuestID == null ? null : baselineById.get(String(selected.QuestID))} steamItems={steamItems} issues={issues} onPatch={patchQuest} onAdvanced={()=>selected && setEditing(selected)} /></div>{editing&&<EditorModal quest={editing} quests={quests} steamItems={steamItems} onClose={()=>setEditing(null)} onSave={saveQuest}/>} {showSaveInfo&&<SaveInfoOverlay fileName={fileName} sourceBaseName={sourceBaseName} savedAt={lastSavedAt} backups={localBackups} onCreateBackup={createLocalBackup} onRestoreBackup={restoreLocalBackup} onClose={()=>setShowSaveInfo(false)}/>}</main>;
+    <div className="layout"><section className="mainPanel">{workspace}</section><QuestInspector quest={selected} baselineQuest={selected?.QuestID == null ? null : baselineById.get(String(selected.QuestID))} steamItems={steamItems} issues={issues} onPatch={patchQuest} onAdvanced={()=>selected && setEditing(selected)} /></div>{editing&&<EditorModal quest={editing} quests={quests} steamItems={steamItems} xdQuestCategoryMode={xdQuestCategoryMode} onClose={()=>setEditing(null)} onSave={saveQuest}/>} {showSaveInfo&&<SaveInfoOverlay fileName={fileName} sourceBaseName={sourceBaseName} savedAt={lastSavedAt} backups={localBackups} onCreateBackup={createLocalBackup} onRestoreBackup={restoreLocalBackup} onClose={()=>setShowSaveInfo(false)}/>}</main>;
 }
 
 createRoot(document.getElementById('root')).render(<AppCrashBoundary><App/></AppCrashBoundary>);
