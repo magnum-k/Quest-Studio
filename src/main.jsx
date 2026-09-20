@@ -7,8 +7,11 @@ const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.24';
+const APP_VERSION = 'v1.1.0-beta.25';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.25', date: '2026-09-20', items: [
+    'Changed fullscreen reward cards to show the full reward image with object-fit: contain instead of cropping the top/bottom of wide badges.'
+  ] },
   { version: 'v1.1.0-beta.24', date: '2026-09-20', items: [
     'Added graph line sorting by creation proxy so questlines can be shown newest first or oldest first using QuestID when no timestamp exists.',
     'Added the graph line sort choice to autosave so the preferred line order survives reloads.'

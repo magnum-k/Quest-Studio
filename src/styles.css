@@ -835,8 +835,15 @@ header, .tabs, .toolbar { flex: 0 0 auto; }
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   max-height: none;
 }
-.questRewardsPanel .rewardCard { min-height: 210px; }
-.questRewardsPanel .rewardCard img, .questRewardsPanel .rewardCardIcon { height: 104px; }
+.questRewardsPanel .rewardCard { min-height: 230px; }
+.questRewardsPanel .rewardCard img, .questRewardsPanel .rewardCardIcon {
+  height: 128px;
+  object-fit: contain;
+  object-position: center;
+  padding: 8px;
+  background: radial-gradient(circle at 50% 40%, rgba(15, 23, 42, .96), rgba(2, 6, 23, .98));
+  border: 1px solid rgba(125, 211, 252, .16);
+}
 .questRewardsPanel .sectionHead small::after { content: ' Added rewards are saved to the draft immediately; click a card only if you want to edit details.'; }
 
 .questGamePreview {
