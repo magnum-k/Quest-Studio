@@ -769,10 +769,9 @@ header, .tabs, .toolbar { flex: 0 0 auto; }
 .side { position: relative; top: auto; }
 
 /* Beta: sidequest branch creation and separated in-game quest preview. */
-.nodeDeleteHint {
+.nodeDeleteHint, .nodeCopyHint {
   position: absolute;
   top: 8px;
-  right: 8px;
   width: 28px;
   height: 28px;
   border-radius: 999px;
@@ -781,14 +780,24 @@ header, .tabs, .toolbar { flex: 0 0 auto; }
   z-index: 6;
   opacity: 0;
   transform: scale(.9);
-  border: 1px solid rgba(248,113,113,.42);
-  background: rgba(127,29,29,.72);
-  color: #fecdd3;
   font-weight: 1000;
   box-shadow: 0 8px 20px rgba(0,0,0,.30);
 }
-.node:hover .nodeDeleteHint, .node.selected .nodeDeleteHint { opacity: 1; transform: scale(1); }
+.nodeDeleteHint {
+  right: 8px;
+  border: 1px solid rgba(248,113,113,.42);
+  background: rgba(127,29,29,.72);
+  color: #fecdd3;
+}
+.nodeCopyHint {
+  right: 42px;
+  border: 1px solid rgba(125,211,252,.42);
+  background: rgba(14,116,144,.72);
+  color: #cffafe;
+}
+.node:hover .nodeDeleteHint, .node.selected .nodeDeleteHint, .node:hover .nodeCopyHint, .node.selected .nodeCopyHint { opacity: 1; transform: scale(1); }
 .nodeDeleteHint:hover { background: #ef4444; color: #fff; border-color: rgba(254,202,202,.95); }
+.nodeCopyHint:hover { background: #06b6d4; color: #03111c; border-color: rgba(207,250,254,.95); }
 .sideQuestPlus {
   position: absolute;
   width: 34px;
