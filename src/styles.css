@@ -695,6 +695,19 @@ header p { max-width: 670px; margin: 12px 0 0; font-size: 15px; line-height: 1.4
   color: #03111c;
   background: linear-gradient(135deg, #facc15, #38bdf8);
 }
+.lineSortControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(125, 211, 252, .26);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, .72);
+  padding: 5px 8px;
+  color: #b9d7ff;
+  white-space: nowrap;
+}
+.lineSortControl span { font-size: 10px; color: #93c5fd; padding: 0; text-transform: uppercase; letter-spacing: .06em; font-weight: 900; }
+.lineSortControl select { min-width: 178px; padding: 7px 9px; border-radius: 10px; border: 1px solid rgba(125, 211, 252, .24); background: rgba(3, 7, 18, .86); color: #e0f2fe; font-weight: 850; }
 .mapControls::-webkit-scrollbar { height: 6px; }
 .mapControls::-webkit-scrollbar-thumb { background: rgba(125, 211, 252, .36); border-radius: 999px; }
 .zoomControls {

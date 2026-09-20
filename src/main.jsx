@@ -7,8 +7,12 @@ const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.23';
+const APP_VERSION = 'v1.1.0-beta.24';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.24', date: '2026-09-20', items: [
+    'Added graph line sorting by creation proxy so questlines can be shown newest first or oldest first using QuestID when no timestamp exists.',
+    'Added the graph line sort choice to autosave so the preferred line order survives reloads.'
+  ] },
   { version: 'v1.1.0-beta.23', date: '2026-09-20', items: [
     'Merged the fullscreen edit-window README documentation from main back into beta so beta is no longer behind stable documentation.',
     'Kept the beta app branding on the beta branch after syncing main into beta.'
@@ -1063,7 +1067,7 @@ function sideQuestFrom(parent, existing) {
   return q;
 }
 
-function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, manualMap, setManualMap, onCreateNext, onCreateSideQuest, onDeleteQuest, onApplyGridOrder, onOpenQuestEditor, issues = [], focusRequest = 0, compactMode = false, titleOnlyMode = false }) {
+function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, manualMap, setManualMap, graphSortMode = 'default', setGraphSortMode, onCreateNext, onCreateSideQuest, onDeleteQuest, onApplyGridOrder, onOpenQuestEditor, issues = [], focusRequest = 0, compactMode = false, titleOnlyMode = false }) {
   const graph = useMemo(() => buildQuestGraph(quests), [quests]);
   const shellRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -1146,8 +1150,22 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
       const loopCount = layoutLinks.filter(l => ids.includes(String(l.source)) && ids.includes(String(l.target)) && nodeById.get(String(l.target))?.quest?.IsRepeatable).length;
       components.push({ key: ids.sort().join('-'), nodes: ns, group: groups.length === 1 ? groups[0] : 'Mixed', loopCount });
     }
-    return components.sort((a,b)=>a.group.localeCompare(b.group)||a.nodes[0].index-b.nodes[0].index);
-  }, [filteredNodes, clusterLinks, layoutLinks]);
+    const lineIdStats = (row) => {
+      const ids = row.nodes.map(n => Number(n.quest?.QuestID ?? n.id)).filter(Number.isFinite);
+      return { min: ids.length ? Math.min(...ids) : 0, max: ids.length ? Math.max(...ids) : 0 };
+    };
+    return components.sort((a,b) => {
+      if (graphSortMode === 'newest') {
+        const aa = lineIdStats(a), bb = lineIdStats(b);
+        return (bb.max - aa.max) || a.group.localeCompare(b.group) || a.nodes[0].index - b.nodes[0].index;
+      }
+      if (graphSortMode === 'oldest') {
+        const aa = lineIdStats(a), bb = lineIdStats(b);
+        return (aa.min - bb.min) || a.group.localeCompare(b.group) || a.nodes[0].index - b.nodes[0].index;
+      }
+      return a.group.localeCompare(b.group) || a.nodes[0].index - b.nodes[0].index;
+    });
+  }, [filteredNodes, clusterLinks, layoutLinks, graphSortMode]);
   const positions = new Map();
   const rowHeight = titleOnlyMode ? 96 : (compactMode ? 162 : 214), colWidth = titleOnlyMode ? 184 : (compactMode ? 258 : 330), nodeWidth = titleOnlyMode ? 168 : (compactMode ? 238 : 300), nodeHeight = titleOnlyMode ? 62 : (compactMode ? 112 : 148);
   const nodeMidX = nodeWidth / 2, linkStartX = nodeWidth - 14, linkY = titleOnlyMode ? 31 : (compactMode ? 48 : 66);
@@ -1264,6 +1282,13 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
   function nodeClick(e,n){ e.stopPropagation(); if(connectMode){ if(!connectFrom){ setConnectFrom(n.id); return; } if(connectFrom!==n.id){ updateMap(m=>{ const links=m.links||[]; const exists=links.some(l=>String(l.source)===String(connectFrom)&&String(l.target)===String(n.id)); return exists?m:{...m,links:[...links,{source:connectFrom,target:n.id}]}; }); } setConnectFrom(null); return; } setSelected(n.quest); }
   function nodeDoubleClick(e,n){ e.preventDefault(); e.stopPropagation(); if (connectMode) return; setSelected(n.quest); onOpenQuestEditor?.(n.quest); }
   function clearManual(){ if(confirm('Clear manual positions and links for this file?')) updateMap(m => ({...m,positions:{},links:[]})); }
+  function changeLineSortMode(value){
+    if (value === graphSortMode) return;
+    const manualPositionCount = Object.keys(manualMap.positions || {}).length;
+    if (manualPositionCount && !confirm(`Change graph line order and reset ${manualPositionCount} manual node position${manualPositionCount === 1 ? '' : 's'}?\n\nSorting uses QuestID as the creation-order proxy because Quest.json has no created timestamp.`)) return;
+    setGraphSortMode?.(value);
+    updateMap(m => ({ ...m, positions: {}, scroll: defaultGraphScroll() }));
+  }
   function resetScroll(){ if(shellRef.current){ const nextScroll = defaultGraphScroll(); shellRef.current.scrollLeft=nextScroll.left; shellRef.current.scrollTop=nextScroll.top; updateMap(m => ({ ...m, scroll: nextScroll })); } }
   function clampScrollForZoom(left, top, nextZoom){
     const shell = shellRef.current;
@@ -1412,7 +1437,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
     onApplyGridOrder?.(orderedIds);
   }
   return <div ref={shellRef} className={`mapShell ${nodeDrag.current ? 'movingNode' : ''}`} onScroll={rememberScroll} onMouseDown={onBackgroundDown} onMouseMove={onMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}>
-    <div className="mapControls"><button onClick={resetScroll}>Reset view</button><button onClick={centerSelected}>Center selected</button><button className={manualMode?'active':''} onClick={()=>setManualMode(!manualMode)}>Move nodes</button><button onClick={lineUpSelected}>Line up selected</button><button onClick={lineUpAll}>Line up all</button><button onClick={applyGridOrder}>Apply grid order</button><button className={connectMode?'active':''} onClick={()=>{setConnectMode(!connectMode);setConnectFrom(null);}}>Connect quests</button><button onClick={clearManual}>Clear manual</button><span>{links.length} quest links ({manualLinks.length} manual) · {crossQuestUnlocks.length} cross-quest unlocks</span>{connectFrom && <span>Choose target for #{connectFrom}</span>}</div>
+    <div className="mapControls"><button onClick={resetScroll}>Reset view</button><button onClick={centerSelected}>Center selected</button><button className={manualMode?'active':''} onClick={()=>setManualMode(!manualMode)}>Move nodes</button><button onClick={lineUpSelected}>Line up selected</button><button onClick={lineUpAll}>Line up all</button><button onClick={applyGridOrder}>Apply grid order</button><button className={connectMode?'active':''} onClick={()=>{setConnectMode(!connectMode);setConnectFrom(null);}}>Connect quests</button><button onClick={clearManual}>Clear manual</button><label className="lineSortControl" title="Quest.json has no created timestamp, so newest/oldest uses QuestID as the creation-order proxy. Changing sort resets manual node positions."><span>Line order</span><select value={graphSortMode} onChange={e=>changeLineSortMode(e.target.value)}><option value="default">Default/grouped</option><option value="newest">Newest first (QuestID)</option><option value="oldest">Oldest first (QuestID)</option></select></label><span>{links.length} quest links ({manualLinks.length} manual) · {crossQuestUnlocks.length} cross-quest unlocks</span>{connectFrom && <span>Choose target for #{connectFrom}</span>}</div>
     <div className="zoomControls" aria-label="Graph zoom controls"><button onClick={()=>zoomBy(-.1)}>−</button><strong>{Math.round(zoom*100)}%</strong><button onClick={()=>zoomBy(.1)}>+</button></div>
     <aside className={`edgeLegend ${legendCollapsed ? 'collapsed' : ''}`} aria-label="Graph edge legend"><div className="edgeLegendHead"><b>Edge legend</b><button type="button" onClick={()=>setLegendCollapsed(v=>!v)} aria-label={legendCollapsed ? 'Show edge legend' : 'Hide edge legend'}>{legendCollapsed ? '+' : '−'}</button></div>{!legendCollapsed && <><span><i className="normal"></i><em>Name/part chain<small>— Auto: Part 1 → Part 2</small></em></span><span><i className="permission"></i><em>Permission-name match<small>— Fallback by QuestPermission name</small></em></span><span><i className="permissionGrant"></i><em>Reward grants permission<small>— PrizeCommand unlocks target</small></em></span><span><i className="unlock"></i><em>Cross-quest unlock<small>— Grant into another questline</small></em></span><span><i className="manual"></i><em>Manual link<small>— Added by you</small></em></span><span><i className="loop"></i><em>Loop/back edge<small>— Returns to earlier quest</small></em></span></>}</aside>
     {selectedEdgeDetail ? <aside className="edgeDetail" aria-label="Selected edge details"><div><b>{selectedEdgeDetail.label}</b><button onClick={()=>setSelectedEdge(null)}>×</button></div><small>{selectedEdgeDetail.strength}</small><p>{selectedEdgeDetail.why}</p><dl><dt>From</dt><dd>#{selectedEdgeDetail.link.source} · {edgeQuestTitle(selectedEdgeDetail.sourceNode)}</dd><dt>To</dt><dd>#{selectedEdgeDetail.link.target} · {edgeQuestTitle(selectedEdgeDetail.targetNode)}</dd>{selectedEdgeDetail.permission ? <><dt>Target requires</dt><dd><code>{selectedEdgeDetail.permission}</code></dd></> : null}{selectedEdgeDetail.grantCommand ? <><dt>Source reward command</dt><dd><code>{selectedEdgeDetail.grantCommand}</code></dd></> : null}<dt>Internal reason</dt><dd><code>{selectedEdgeDetail.link.reason || 'manual'}</code></dd></dl></aside> : null}
@@ -1577,6 +1602,7 @@ function App() {
   const [activeTab, setActiveTab] = useState(() => initial.activeTab || 'graph');
   const [compactMode, setCompactMode] = useState(() => !!initial.compactMode);
   const [titleOnlyMode, setTitleOnlyMode] = useState(() => !!initial.titleOnlyMode);
+  const [graphSortMode, setGraphSortMode] = useState(() => initial.graphSortMode || 'default');
   const [xdQuestCategoryMode, setXdQuestCategoryMode] = useState(() => initial.xdQuestCategoryMode ?? (initial.quests || []).some(q => questCategoryPrefix(q)));
   const [showSaveInfo, setShowSaveInfo] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(() => initial.savedAt || '');
@@ -1603,14 +1629,14 @@ function App() {
   useEffect(()=>{
     if (!quests.length || !fileName || fileName === 'no file loaded') return;
     const savedAt = new Date().toISOString();
-    const result = saveAutosaveSnapshot({ quests, baselineQuests, fileName, sourceBaseName, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, undoStack: undoStack.slice(0, 20), savedAt, downloadedAt: lastDownloadedAt, lastDownloadedKey });
+    const result = saveAutosaveSnapshot({ quests, baselineQuests, fileName, sourceBaseName, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, graphSortMode, xdQuestCategoryMode, undoStack: undoStack.slice(0, 20), savedAt, downloadedAt: lastDownloadedAt, lastDownloadedKey });
     if (result.ok) setLastSavedAt(result.savedAt);
-  }, [quests, baselineQuests, fileName, sourceBaseName, manualMap, selected?.QuestID, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, undoStack, lastDownloadedAt, lastDownloadedKey]);
+  }, [quests, baselineQuests, fileName, sourceBaseName, manualMap, selected?.QuestID, activeTab, query, groupFilter, compactMode, titleOnlyMode, graphSortMode, xdQuestCategoryMode, undoStack, lastDownloadedAt, lastDownloadedKey]);
   function persistAutosaveNow(overrides = {}){
     const next = {
       quests, baselineQuests, fileName, sourceBaseName, manualMap,
       selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter,
-      compactMode, titleOnlyMode, xdQuestCategoryMode, undoStack: undoStack.slice(0, 20),
+      compactMode, titleOnlyMode, graphSortMode, xdQuestCategoryMode, undoStack: undoStack.slice(0, 20),
       savedAt: new Date().toISOString(), downloadedAt: lastDownloadedAt, lastDownloadedKey,
       ...overrides
     };
@@ -1624,7 +1650,7 @@ function App() {
   async function onFile(e){ const file=e.target.files?.[0]; if(!file)return; try{ await loadText(await file.text(),file.name); }catch(err){ alert('JSON error: '+err.message); } }
   function refreshGraphView(){ setGraphRevision(v => v + 1); }
   function captureUndoState(label){
-    return { label, createdAt: Date.now(), quests: structuredClone(quests), baselineQuests: structuredClone(baselineQuests), manualMap: structuredClone(manualMap), fileName, sourceBaseName, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, lastDownloadedAt, lastDownloadedKey };
+    return { label, createdAt: Date.now(), quests: structuredClone(quests), baselineQuests: structuredClone(baselineQuests), manualMap: structuredClone(manualMap), fileName, sourceBaseName, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, graphSortMode, xdQuestCategoryMode, lastDownloadedAt, lastDownloadedKey };
   }
   function pushUndo(label){
     if (!quests.length) return;
@@ -1647,6 +1673,7 @@ function App() {
     setGroupFilter(snapshot.groupFilter || '');
     setCompactMode(!!snapshot.compactMode);
     setTitleOnlyMode(!!snapshot.titleOnlyMode);
+    setGraphSortMode(snapshot.graphSortMode || 'default');
     setXdQuestCategoryMode(snapshot.xdQuestCategoryMode ?? (snapshot.quests || []).some(q => questCategoryPrefix(q)));
     setLastDownloadedAt(snapshot.lastDownloadedAt || '');
     setLastDownloadedKey(snapshot.lastDownloadedKey || '');
@@ -1727,7 +1754,7 @@ function App() {
   function createLocalBackup(reason = 'Manual snapshot'){
     if (!quests.length) { alert('Load Quest.json before creating a backup snapshot.'); return; }
     const createdAt = new Date().toISOString();
-    const snapshot = { id: `backup-${Date.now()}`, createdAt, reason, fileName, sourceBaseName, quests, baselineQuests, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, xdQuestCategoryMode, questCount: quests.length };
+    const snapshot = { id: `backup-${Date.now()}`, createdAt, reason, fileName, sourceBaseName, quests, baselineQuests, manualMap, selectedId: selected?.QuestID ?? null, activeTab, query, groupFilter, compactMode, titleOnlyMode, graphSortMode, xdQuestCategoryMode, questCount: quests.length };
     setLocalBackups(list => [snapshot, ...list].slice(0, 5));
   }
   function restoreLocalBackup(snapshot){
@@ -1745,6 +1772,7 @@ function App() {
     setGroupFilter(snapshot.groupFilter || '');
     setCompactMode(!!snapshot.compactMode);
     setTitleOnlyMode(!!snapshot.titleOnlyMode);
+    setGraphSortMode(snapshot.graphSortMode || 'default');
     setXdQuestCategoryMode(snapshot.xdQuestCategoryMode ?? (snapshot.quests || []).some(q => questCategoryPrefix(q)));
     setLastDownloadedAt('');
     setLastDownloadedKey('');
@@ -1781,7 +1809,7 @@ function App() {
     const status = fileNeedsDownload ? 'needs download' : (quests.length ? 'downloaded' : 'empty');
     document.title = `${fileNeedsDownload ? '● ' : ''}Quest Studio ${APP_VERSION} — ${name} — ${status}`;
   }, [fileName, fileNeedsDownload, quests.length]);
-  const workspace = activeTab === 'changelog' ? <ChangelogView/> : !quests.length ? <div className="empty"><h2>Upload Quest.json</h2><p>The file is kept in memory. Manual positions/links are saved locally per filename and can be exported separately.</p></div> : activeTab === 'graph' ? <Graph quests={quests} selected={selected} setSelected={setSelected} groupFilter={groupFilter} query={query} steamItems={steamItems} manualMap={manualMap} setManualMap={setManualMap} onCreateNext={createNextQuest} onCreateSideQuest={createSideQuest} onDeleteQuest={deleteQuest} onApplyGridOrder={applyGridOrderToJson} onOpenQuestEditor={setEditing} issues={issues} focusRequest={graphFocusRequest} compactMode={compactMode} titleOnlyMode={titleOnlyMode}/> : activeTab === 'list' ? <QuestListView quests={quests} selected={selected} setSelected={setSelected} onShowGraph={focusQuestInGraph} query={query}/> : activeTab === 'validation' ? <ValidationView issues={issues} setSelected={focusQuestInGraph} selected={selected}/> : <SettingsView quests={quests} baselineQuests={baselineQuests} graph={graph} manualMap={manualMap} mapSteamStatus={mapSteamStatus} issues={issues} backups={localBackups} fileName={fileName} fileStatus={fileStatus} fileNeedsDownload={fileNeedsDownload} xdQuestCategoryMode={xdQuestCategoryMode} setXdQuestCategoryMode={setXdQuestCategoryMode} onDownloadJson={downloadJson} onDownloadMap={downloadMap} onNewQuest={createNew} onShowGraph={focusQuestInGraph} onOpenQuest={openQuestInspector} onSearchRelated={searchRelated}/>;
+  const workspace = activeTab === 'changelog' ? <ChangelogView/> : !quests.length ? <div className="empty"><h2>Upload Quest.json</h2><p>The file is kept in memory. Manual positions/links are saved locally per filename and can be exported separately.</p></div> : activeTab === 'graph' ? <Graph quests={quests} selected={selected} setSelected={setSelected} groupFilter={groupFilter} query={query} steamItems={steamItems} manualMap={manualMap} setManualMap={setManualMap} graphSortMode={graphSortMode} setGraphSortMode={setGraphSortMode} onCreateNext={createNextQuest} onCreateSideQuest={createSideQuest} onDeleteQuest={deleteQuest} onApplyGridOrder={applyGridOrderToJson} onOpenQuestEditor={setEditing} issues={issues} focusRequest={graphFocusRequest} compactMode={compactMode} titleOnlyMode={titleOnlyMode}/> : activeTab === 'list' ? <QuestListView quests={quests} selected={selected} setSelected={setSelected} onShowGraph={focusQuestInGraph} query={query}/> : activeTab === 'validation' ? <ValidationView issues={issues} setSelected={focusQuestInGraph} selected={selected}/> : <SettingsView quests={quests} baselineQuests={baselineQuests} graph={graph} manualMap={manualMap} mapSteamStatus={mapSteamStatus} issues={issues} backups={localBackups} fileName={fileName} fileStatus={fileStatus} fileNeedsDownload={fileNeedsDownload} xdQuestCategoryMode={xdQuestCategoryMode} setXdQuestCategoryMode={setXdQuestCategoryMode} onDownloadJson={downloadJson} onDownloadMap={downloadMap} onNewQuest={createNew} onShowGraph={focusQuestInGraph} onOpenQuest={openQuestInspector} onSearchRelated={searchRelated}/>;
   return <main className={`${compactMode ? 'compactMode' : 'comfortMode'} ${titleOnlyMode ? 'titleOnlyMode' : ''}`}><header><div className="brandBlock"><img className="brandLogo" src="/12g-logo.jpg" alt="12G" /><div><h1>Quest Studio <span className="appVersion">{APP_VERSION}</span></h1><p>Local XDQuest editor with a visual quest graph, inspector, validation, and safe JSON export.</p></div></div><div className="actions"><input ref={fileRef} type="file" accept=".json,application/json" onChange={onFile}/><button onClick={()=>fileRef.current.click()}>Load Quest.json</button><button className="primary" disabled={!quests.length} onClick={downloadJson}>Save file / Download Quest.json</button><button disabled={!quests.length} onClick={downloadMap}>Download map</button><button onClick={()=>setShowSaveInfo(true)}>Save info</button></div></header>
     <section className="tabs">{tabs.map(([id,label]) => <button key={id} className={activeTab===id?'active':''} onClick={()=>setActiveTab(id)}>{label}</button>)}</section>
     <section className="toolbar"><b>{fileName}</b><span>{quests.length} quests · {graph.links.length} auto chains · {(manualMap.links||[]).length} manual · autosaves instantly{lastSavedAt ? ` · last ${new Date(lastSavedAt).toLocaleTimeString()}` : ''} · <em className={fileNeedsDownload?'fileDirty':'fileClean'}>{fileStatus}</em> · {mapSteamStatus}</span><button className="undoButton" disabled={!undoStack.length} title={undoStack[0] ? `Undo: ${undoStack[0].label}` : 'Nothing to undo'} onClick={undoLastAction}>↶ Undo{undoStack[0] ? `: ${undoStack[0].label}` : ''}</button><input placeholder="Search quest, ID, text…" value={query} onChange={e=>setQuery(e.target.value)}/><select value={groupFilter} onChange={e=>setGroupFilter(e.target.value)}><option value="">All groups</option>{graph.groups.map(g=><option key={g}>{g}</option>)}</select><button className={compactMode?'active densityToggle':'densityToggle'} onClick={()=>setCompactMode(v=>!v)}>{compactMode?'Compact on':'Comfort mode'}</button><button className={titleOnlyMode?'active densityToggle':'densityToggle'} onClick={()=>setTitleOnlyMode(v=>!v)}>{titleOnlyMode?'Graph boxes: title only':'Graph boxes: full'}</button><button onClick={createNew}>+ New quest</button></section>
