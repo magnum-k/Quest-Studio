@@ -7,12 +7,8 @@ const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.30';
+const APP_VERSION = 'v1.1.0-beta.29';
 const CHANGELOG = [
-  { version: 'v1.1.0-beta.30', date: '2026-09-20', items: [
-    'Adjusted branch summary placement so repeatable sidequest summaries render on separate vertical lanes instead of sharing the same graph line.',
-    'Summary lane placement now anchors to the right of the full branch row and uses separate Y lanes, avoiding overlap with early sidequest nodes.'
-  ] },
   { version: 'v1.1.0-beta.29', date: '2026-09-20', items: [
     'Changed questline summary cards to split across branch/sidequest lanes instead of collapsing a branched row into one broken repeatable summary.',
     'Summary cards now anchor to each branch leaf and avoid overlapping when sidequests branch early in a questline.'
@@ -1220,7 +1216,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
     });
   }, [filteredNodes, clusterLinks, layoutLinks, graphSortMode]);
   const positions = new Map();
-  const rowHeight = titleOnlyMode ? 96 : (compactMode ? 242 : 344), colWidth = titleOnlyMode ? 184 : (compactMode ? 258 : 330), nodeWidth = titleOnlyMode ? 168 : (compactMode ? 238 : 300), nodeHeight = titleOnlyMode ? 62 : (compactMode ? 112 : 148);
+  const rowHeight = titleOnlyMode ? 96 : (compactMode ? 162 : 214), colWidth = titleOnlyMode ? 184 : (compactMode ? 258 : 330), nodeWidth = titleOnlyMode ? 168 : (compactMode ? 238 : 300), nodeHeight = titleOnlyMode ? 62 : (compactMode ? 112 : 148);
   const nodeMidX = nodeWidth / 2, linkStartX = nodeWidth - 14, linkY = titleOnlyMode ? 31 : (compactMode ? 48 : 66);
   const graphTopHeadroom = 320;
   const graphTopY = 82 + graphTopHeadroom;
@@ -1549,25 +1545,18 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
       return { ...g, title: counts[g.keyPrefix] > 1 ? `${g.baseTitle} ${seen[g.keyPrefix]}` : g.baseTitle };
     });
   }
-  function placeSummaryGroups(row, groups){
-    const sortedGroups = [...groups].sort((a,b) => {
-      const aMaxX = Math.max(...a.nodes.map(n => positions.get(n.id)?.x ?? 0));
-      const bMaxX = Math.max(...b.nodes.map(n => positions.get(n.id)?.x ?? 0));
-      const aMinY = Math.min(...a.nodes.map(n => positions.get(n.id)?.y ?? 0));
-      const bMinY = Math.min(...b.nodes.map(n => positions.get(n.id)?.y ?? 0));
-      return (aMinY - bMinY) || (aMaxX - bMaxX) || a.key.localeCompare(b.key);
-    });
-    const rowPositions = row.nodes.map(n => positions.get(n.id)).filter(Boolean);
-    const rowTop = Math.min(...rowPositions.map(p => p.y), graphTopY);
-    const rowRight = Math.max(...rowPositions.map(p => p.x), 92);
-    const laneGap = compactMode ? 76 : 96;
-    const laneTop = rowTop + 18;
-    const laneLeft = rowRight + nodeWidth + 30;
-    return sortedGroups.map((g, idx) => {
-      const pathPositions = g.nodes.map(n => positions.get(n.id)).filter(Boolean);
-      if (!pathPositions.length) return null;
-      const top = laneTop + idx * laneGap;
-      return { ...g, left: laneLeft, top, placementIndex: idx };
+  function placeSummaryGroups(groups){
+    const placed = [];
+    const minGap = compactMode ? 64 : 82;
+    return groups.map((g, idx) => {
+      const leaf = g.leafId ? nodeByIdAll.get(String(g.leafId)) : g.nodes[g.nodes.length - 1];
+      const p = leaf && positions.get(String(leaf.id));
+      if (!p) return null;
+      let left = p.x + nodeWidth + 30;
+      let top = p.y + 18;
+      while (placed.some(box => Math.abs(box.left - left) < 300 && Math.abs(box.top - top) < minGap)) top += minGap;
+      placed.push({ left, top });
+      return { ...g, left, top, placementIndex: idx };
     }).filter(Boolean);
   }
   return <div ref={shellRef} className={`mapShell ${nodeDrag.current ? 'movingNode' : ''}`} onScroll={rememberScroll} onMouseDown={onBackgroundDown} onMouseMove={onMove} onMouseUp={stopDrag} onMouseLeave={stopDrag}>
@@ -1590,7 +1579,7 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
       {rows.map((row,rowIndex)=>{ const matchedCount=row.nodes.filter(n=>!contextVisible.has(n.id)).length; const contextCount=row.nodes.length-matchedCount; const oneTimeStarts=row.nodes.filter(n=>!incoming.has(n.id)&&!n.quest?.IsRepeatable).length; const repeatables=row.nodes.filter(n=>n.quest?.IsRepeatable).length; return <div className="clusterLabel" key={row.key} style={{top:graphTopHeadroom+26+rowIndex*rowHeight,left:22}}><b>{row.group}</b><span>{searchText ? `${matchedCount} match${matchedCount===1?'':'es'}` : `${row.nodes.length} quests`}</span>{contextCount ? <em className="contextTag">{contextCount} connected outside search</em> : null}{!searchText && oneTimeStarts ? <em>{oneTimeStarts} one-time start{oneTimeStarts>1?'s':''}</em> : null}{!searchText && repeatables ? <em>{repeatables} repeatable</em> : null}{row.loopCount ? <em className="loopTag">loop</em> : null}</div>; })}
       {rows.map(row=>{
         if (searchText || titleOnlyMode) return null;
-        return placeSummaryGroups(row, summaryBranchGroups(row)).map(g => <div key={`summary-${row.key}-${g.key}`} className="summaryLane" style={{left:g.left,top:g.top,position:'absolute'}}><QuestlineSummaryBox nodes={g.nodes} externalCount={g.unlockCount} title={g.title}/></div>);
+        return placeSummaryGroups(summaryBranchGroups(row)).map(g => <div key={`summary-${row.key}-${g.key}`} className="summaryLane" style={{left:g.left,top:g.top,position:'absolute'}}><QuestlineSummaryBox nodes={g.nodes} externalCount={g.unlockCount} title={g.title}/></div>);
       })}
       {filteredNodes.map(n=>{ const p=positions.get(n.id); const isContext=contextVisible.has(n.id); const objectiveSkin=titleOnlyMode ? null : objectiveSkinImage(n.quest, steamItems); const rewards=titleOnlyMode ? [] : rewardSummary(n.quest.PrizeList).slice(0,2); const isLast=!outgoing.has(n.id); const issueCount=issueCounts[String(n.quest.QuestID)] || 0; const isStart=!incoming.has(n.id); const isRepeatable=!!n.quest?.IsRepeatable; const loopReturn=isRepeatable&&incoming.has(n.id); return <React.Fragment key={n.id}><button onMouseDown={e=>nodePointerDown(e,n)} onClick={e=>nodeClick(e,n)} onDoubleClick={e=>nodeDoubleClick(e,n)} className={'node '+(titleOnlyMode?'titleOnlyNode ':'')+(selected?.QuestID===n.quest.QuestID?'selected ':'')+(connectFrom===n.id?'connectFrom ':'')+(manualMode?'movable ':'')+(isRepeatable?'repeatable ':'')+(loopReturn?'loopReturn ':'')+(isContext?'searchContext ':'')} style={{left:p.x,top:p.y}} title="Click to select · double-click to fullscreen edit">
         {!titleOnlyMode && <span className="nodeFlags">{isContext?<span className="flag context">connected outside search</span>:null}{isStart&&!isRepeatable?<span className="flag start">one-time start</span>:null}{isRepeatable?<span className="flag repeat">repeatable</span>:null}{loopReturn?<span className="flag loop">loop return</span>:null}</span>}<span className="nodeCopyHint" title={`Copy quest #${n.id}`} onClick={(e)=>{e.preventDefault();e.stopPropagation();onCopyQuest?.(n.quest, { x: p.x + colWidth, y: p.y });}}>⧉</span><span className="nodeDeleteHint" title={`Delete quest #${n.id}`} onClick={(e)=>{e.preventDefault();e.stopPropagation();onDeleteQuest?.(n.quest);}}>×</span>{issueCount ? <span className="nodeBadge">{titleOnlyMode ? issueCount : `${issueCount} issues`}</span> : null}{objectiveSkin?.preview && <img className="nodeSkin" src={objectiveSkin.preview} alt="" title={`Objective target: ${objectiveSkin.label}`}/>}<span className="nodeId">#{n.id}{titleOnlyMode ? '' : ` · ${n.group}${n.part!=null?` · Part ${n.part}`:''}`}</span><TaggedText className="nodeTitle" value={questTitle(n.quest)}/>{!titleOnlyMode && <><small><TaggedText value={n.quest.QuestMissions}/></small><span className="meta">{questTypeName(n.quest.QuestType)} · perm {n.quest.QuestPermission || '—'} · rewards {(n.quest.PrizeList||[]).length}</span>{rewards.length?<span className="nodeRewards">🏆 {rewards.join(' · ')}</span>:null}</>}</button>{!isContext && !titleOnlyMode && <button className="sideQuestPlus" title={`Add sidequest from #${n.id}`} style={{left:p.x+nodeWidth-34,top:p.y+(compactMode?76:108)}} onClick={(e)=>{e.stopPropagation();onCreateSideQuest?.(n.quest);}}>↳+</button>}{isLast && !isContext && !titleOnlyMode && <button className="linePlus" title="Add next quest in line" style={{left:p.x+nodeWidth,top:p.y+(compactMode?34:48)}} onClick={(e)=>{e.stopPropagation();onCreateNext(n.quest, { x: p.x + colWidth, y: p.y });}}>+</button>}</React.Fragment>})}
