@@ -521,6 +521,12 @@ header p { max-width: 670px; margin: 12px 0 0; font-size: 15px; line-height: 1.4
 .addRewardModal .modalFoot { padding: 18px 0 0; border: 0; background: transparent; }
 .rewardBuilder .modalFoot { padding: 16px 18px; border-top: 1px solid rgba(148,163,184,.14); background: rgba(7,12,22,.70); }
 .modalHead small { color: var(--muted); margin-left: 8px; }
+.modalHeadActions { display: flex; align-items: center; gap: 10px; }
+.modalFootSpacer { flex: 1 1 auto; }
+.danger.subtleDanger { border-color: rgba(248, 113, 113, .34); background: rgba(127, 29, 29, .22); color: #fecdd3; }
+.danger.subtleDanger:hover { border-color: rgba(248, 113, 113, .70); background: rgba(127, 29, 29, .42); color: #fff1f2; }
+.inspectorActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.inspectorActions button { white-space: nowrap; }
 .modalBody { display: grid; grid-template-columns: minmax(0, 1fr) minmax(430px, .95fr); gap: 16px; overflow: hidden; padding: 16px; flex: 1; min-height: 0; }
 .formPanel { border: 1px solid rgba(148, 163, 184, .14); background: rgba(9, 14, 25, .72); border-radius: 24px; padding: 18px; }
 .formPanel.prominent { background: rgba(15, 23, 42, .78); }
@@ -566,25 +572,25 @@ header p { max-width: 670px; margin: 12px 0 0; font-size: 15px; line-height: 1.4
 .sectionHead small { display: block; margin-top: -4px; }
 
 .rewardEditor { display: grid; gap: 14px; }
-.rewardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(154px, 1fr)); gap: 11px; max-height: 370px; overflow: auto; padding: 4px; }
+.rewardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; max-height: 460px; overflow: auto; padding: 4px; }
 .rewardCard {
   display: grid;
   gap: 7px;
   text-align: left;
   align-content: start;
-  min-height: 160px;
-  padding: 10px;
-  border-radius: 20px;
+  min-height: 190px;
+  padding: 13px;
+  border-radius: 22px;
   border: 1px solid rgba(148, 163, 184, .17);
   background: rgba(3, 7, 18, .42);
   color: #eaf2ff;
 }
 .rewardCard:hover { border-color: rgba(56, 189, 248, .56); background: rgba(12, 28, 51, .82); }
 .rewardCard.selected { border-color: rgba(45, 212, 191, .9); box-shadow: 0 0 0 2px rgba(45, 212, 191, .22), 0 12px 30px rgba(0, 0, 0, .24); }
-.rewardCard img, .rewardCardIcon { width: 100%; height: 68px; border-radius: 16px; object-fit: cover; background: #0f172a; display: grid; place-items: center; color: #67e8f9; font-weight: 900; }
+.rewardCard img, .rewardCardIcon { width: 100%; height: 90px; border-radius: 16px; object-fit: cover; background: #0f172a; display: grid; place-items: center; color: #67e8f9; font-weight: 900; }
 .rewardCardType { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #8cc8ff; }
-.rewardCard b { font-size: 13px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.rewardCard small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rewardCard b { font-size: 15px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.rewardCard small { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rewardForm { border: 1px solid rgba(148, 163, 184, .16); background: rgba(3, 7, 18, .42); border-radius: 22px; padding: 14px; }
 .selectedRewardForm { border-color: rgba(45, 212, 191, .58); background: rgba(8, 24, 39, .72); }
 .rewardFormHead { margin-bottom: 12px; }
@@ -750,6 +756,26 @@ header, .tabs, .toolbar { flex: 0 0 auto; }
 .side { position: relative; top: auto; }
 
 /* Beta: sidequest branch creation and separated in-game quest preview. */
+.nodeDeleteHint {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  z-index: 6;
+  opacity: 0;
+  transform: scale(.9);
+  border: 1px solid rgba(248,113,113,.42);
+  background: rgba(127,29,29,.72);
+  color: #fecdd3;
+  font-weight: 1000;
+  box-shadow: 0 8px 20px rgba(0,0,0,.30);
+}
+.node:hover .nodeDeleteHint, .node.selected .nodeDeleteHint { opacity: 1; transform: scale(1); }
+.nodeDeleteHint:hover { background: #ef4444; color: #fff; border-color: rgba(254,202,202,.95); }
 .sideQuestPlus {
   position: absolute;
   width: 34px;
@@ -768,7 +794,7 @@ header, .tabs, .toolbar { flex: 0 0 auto; }
 }
 .sideQuestPlus:hover { transform: translateY(-1px) scale(1.04); }
 .questEditLayout {
-  grid-template-columns: minmax(620px, 1fr) minmax(440px, 500px);
+  grid-template-columns: minmax(580px, .94fr) minmax(520px, 620px);
   gap: 20px;
   align-items: stretch;
   min-height: 0;
@@ -786,21 +812,29 @@ header, .tabs, .toolbar { flex: 0 0 auto; }
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border-left: 1px solid rgba(45, 212, 191, .18);
-  padding-left: 20px;
+  border-left: 1px solid rgba(96, 165, 250, .24);
+  padding-left: 22px;
+  background: radial-gradient(circle at 50% 0%, rgba(37, 99, 235, .10), transparent 45%), rgba(2, 6, 23, .28);
+  border-radius: 22px;
   display: flex;
 }
 .questRewardsPanel .rewardGrid {
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   max-height: none;
 }
+.questRewardsPanel .rewardCard { min-height: 210px; }
+.questRewardsPanel .rewardCard img, .questRewardsPanel .rewardCardIcon { height: 104px; }
+.questRewardsPanel .sectionHead small::after { content: ' Added rewards are saved to the draft immediately; click a card only if you want to edit details.'; }
+
 .questGamePreview {
-  border: 1px solid rgba(45, 212, 191, .26);
-  border-radius: 26px;
-  padding: 18px;
+  border: 1px solid rgba(34, 211, 238, .38);
+  border-radius: 28px;
+  padding: 20px;
   background:
-    radial-gradient(circle at 80% 8%, rgba(45, 212, 191, .16), transparent 32%),
-    linear-gradient(180deg, rgba(3, 14, 24, .94), rgba(3, 7, 18, .92));
+    linear-gradient(90deg, rgba(0,0,0,.26), transparent 24%, rgba(0,0,0,.24)),
+    radial-gradient(circle at 84% 6%, rgba(34, 197, 94, .22), transparent 32%),
+    radial-gradient(circle at 8% 12%, rgba(249, 115, 22, .16), transparent 28%),
+    linear-gradient(180deg, rgba(1, 38, 36, .96), rgba(3, 12, 24, .95) 52%, rgba(2, 6, 23, .98));
   box-shadow: 0 24px 70px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.06);
   position: relative;
   flex: 1;
@@ -820,7 +854,7 @@ header, .tabs, .toolbar { flex: 0 0 auto; }
   text-transform: uppercase;
   letter-spacing: .08em;
 }
-.questGamePreview h3 { margin: 13px 0 9px; color: #f8fafc; font-size: 26px; line-height: 1.12; }
+.questGamePreview h3 { margin: 14px 0 10px; color: #f8fafc; font-size: 28px; line-height: 1.12; }
 .previewMeta { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 14px; }
 .previewMeta span { border: 1px solid rgba(148,163,184,.18); background: rgba(15,23,42,.62); color: #c7d2fe; border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 850; }
 .questGamePreview section { border-top: 1px solid rgba(148,163,184,.14); padding-top: 13px; margin-top: 13px; }
