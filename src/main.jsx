@@ -7,8 +7,12 @@ const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.26';
+const APP_VERSION = 'v1.1.0-beta.27';
 const CHANGELOG = [
+  { version: 'v1.1.0-beta.27', date: '2026-09-20', items: [
+    'Changed graph node thumbnails to resolve from the quest objective Target instead of falling back to unrelated reward Steam skins.',
+    'If Target is a Steam skin ID it is used directly; text targets can match already loaded Steam skin titles/slugs, otherwise no random reward image is shown.'
+  ] },
   { version: 'v1.1.0-beta.26', date: '2026-09-20', items: [
     'Re-uploaded the 70,000 XP badge to Freeimage and updated the XP badge manifest so exported command rewards use the corrected public image URL.',
     'Replaced the local 70K XP badge preview with the corrected 512×512 source image.'
@@ -397,6 +401,24 @@ function aiQuestContext(quests = [], selectedQuest = {}) {
 }
 function rewardTitle(r, i = 0) { return r?.PrizeName || r?.CustomItemName || r?.ItemShortName || r?.PrizeCommand || `Reward ${i + 1}`; }
 function rewardImage(r, steamItems = {}) { return Number(r?.ItemSkinID) ? steamItems[String(r.ItemSkinID)]?.preview : r?.CommandImageUrl; }
+function normalizeAssetKey(value = '') {
+  return String(value || '').toLowerCase().replace(/&amp;/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+function objectiveSkinImage(q, steamItems = {}) {
+  const target = String(q?.Target || '').trim();
+  if (!target) return null;
+  if (/^\d{6,20}$/.test(target) && target !== '0') {
+    const item = steamItems[target];
+    return item?.preview ? { id: target, item, preview: item.preview, label: item.title || `Target skin ${target}`, source: 'target-skin-id' } : null;
+  }
+  const targetKey = normalizeAssetKey(target);
+  if (!targetKey) return null;
+  for (const [id, item] of Object.entries(steamItems || {})) {
+    const candidates = [item?.title, item?.name, item?.publishedfileid, id].map(normalizeAssetKey).filter(Boolean);
+    if (candidates.includes(targetKey)) return { id, item, preview: item.preview, label: item.title || target, source: 'target-title-match' };
+  }
+  return null;
+}
 function parseAmountText(text = '') {
   const raw = String(text || '').replace(/,/g, '.');
   const match = raw.match(/(\d+(?:\.\d+)?)\s*([kKmM])?\b/);
@@ -1474,8 +1496,8 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
           return p ? <div key={`summary-${row.key}-${g.key}`} style={{left:p.x+nodeWidth+30,top:p.y+18+idx*(compactMode?58:72),position:'absolute'}}><QuestlineSummaryBox nodes={g.nodes} externalCount={unlockCount} title={g.title}/></div> : null;
         });
       })}
-      {filteredNodes.map(n=>{ const p=positions.get(n.id); const isContext=contextVisible.has(n.id); const firstSkin=titleOnlyMode ? null : extractSkinIds(n.quest).map(id=>steamItems[id]).find(Boolean); const rewards=titleOnlyMode ? [] : rewardSummary(n.quest.PrizeList).slice(0,2); const isLast=!outgoing.has(n.id); const issueCount=issueCounts[String(n.quest.QuestID)] || 0; const isStart=!incoming.has(n.id); const isRepeatable=!!n.quest?.IsRepeatable; const loopReturn=isRepeatable&&incoming.has(n.id); return <React.Fragment key={n.id}><button onMouseDown={e=>nodePointerDown(e,n)} onClick={e=>nodeClick(e,n)} onDoubleClick={e=>nodeDoubleClick(e,n)} className={'node '+(titleOnlyMode?'titleOnlyNode ':'')+(selected?.QuestID===n.quest.QuestID?'selected ':'')+(connectFrom===n.id?'connectFrom ':'')+(manualMode?'movable ':'')+(isRepeatable?'repeatable ':'')+(loopReturn?'loopReturn ':'')+(isContext?'searchContext ':'')} style={{left:p.x,top:p.y}} title="Click to select · double-click to fullscreen edit">
-        {!titleOnlyMode && <span className="nodeFlags">{isContext?<span className="flag context">connected outside search</span>:null}{isStart&&!isRepeatable?<span className="flag start">one-time start</span>:null}{isRepeatable?<span className="flag repeat">repeatable</span>:null}{loopReturn?<span className="flag loop">loop return</span>:null}</span>}<span className="nodeDeleteHint" title={`Delete quest #${n.id}`} onClick={(e)=>{e.preventDefault();e.stopPropagation();onDeleteQuest?.(n.quest);}}>×</span>{issueCount ? <span className="nodeBadge">{titleOnlyMode ? issueCount : `${issueCount} issues`}</span> : null}{firstSkin?.preview && <img className="nodeSkin" src={firstSkin.preview}/>}<span className="nodeId">#{n.id}{titleOnlyMode ? '' : ` · ${n.group}${n.part!=null?` · Part ${n.part}`:''}`}</span><TaggedText className="nodeTitle" value={questTitle(n.quest)}/>{!titleOnlyMode && <><small><TaggedText value={n.quest.QuestMissions}/></small><span className="meta">{questTypeName(n.quest.QuestType)} · perm {n.quest.QuestPermission || '—'} · rewards {(n.quest.PrizeList||[]).length}</span>{rewards.length?<span className="nodeRewards">🏆 {rewards.join(' · ')}</span>:null}</>}</button>{!isContext && !titleOnlyMode && <button className="sideQuestPlus" title={`Add sidequest from #${n.id}`} style={{left:p.x+nodeWidth-34,top:p.y+(compactMode?76:108)}} onClick={(e)=>{e.stopPropagation();onCreateSideQuest?.(n.quest);}}>↳+</button>}{isLast && !isContext && !titleOnlyMode && <button className="linePlus" title="Add next quest in line" style={{left:p.x+nodeWidth,top:p.y+(compactMode?34:48)}} onClick={(e)=>{e.stopPropagation();onCreateNext(n.quest, { x: p.x + colWidth, y: p.y });}}>+</button>}</React.Fragment>})}
+      {filteredNodes.map(n=>{ const p=positions.get(n.id); const isContext=contextVisible.has(n.id); const objectiveSkin=titleOnlyMode ? null : objectiveSkinImage(n.quest, steamItems); const rewards=titleOnlyMode ? [] : rewardSummary(n.quest.PrizeList).slice(0,2); const isLast=!outgoing.has(n.id); const issueCount=issueCounts[String(n.quest.QuestID)] || 0; const isStart=!incoming.has(n.id); const isRepeatable=!!n.quest?.IsRepeatable; const loopReturn=isRepeatable&&incoming.has(n.id); return <React.Fragment key={n.id}><button onMouseDown={e=>nodePointerDown(e,n)} onClick={e=>nodeClick(e,n)} onDoubleClick={e=>nodeDoubleClick(e,n)} className={'node '+(titleOnlyMode?'titleOnlyNode ':'')+(selected?.QuestID===n.quest.QuestID?'selected ':'')+(connectFrom===n.id?'connectFrom ':'')+(manualMode?'movable ':'')+(isRepeatable?'repeatable ':'')+(loopReturn?'loopReturn ':'')+(isContext?'searchContext ':'')} style={{left:p.x,top:p.y}} title="Click to select · double-click to fullscreen edit">
+        {!titleOnlyMode && <span className="nodeFlags">{isContext?<span className="flag context">connected outside search</span>:null}{isStart&&!isRepeatable?<span className="flag start">one-time start</span>:null}{isRepeatable?<span className="flag repeat">repeatable</span>:null}{loopReturn?<span className="flag loop">loop return</span>:null}</span>}<span className="nodeDeleteHint" title={`Delete quest #${n.id}`} onClick={(e)=>{e.preventDefault();e.stopPropagation();onDeleteQuest?.(n.quest);}}>×</span>{issueCount ? <span className="nodeBadge">{titleOnlyMode ? issueCount : `${issueCount} issues`}</span> : null}{objectiveSkin?.preview && <img className="nodeSkin" src={objectiveSkin.preview} alt="" title={`Objective target: ${objectiveSkin.label}`}/>}<span className="nodeId">#{n.id}{titleOnlyMode ? '' : ` · ${n.group}${n.part!=null?` · Part ${n.part}`:''}`}</span><TaggedText className="nodeTitle" value={questTitle(n.quest)}/>{!titleOnlyMode && <><small><TaggedText value={n.quest.QuestMissions}/></small><span className="meta">{questTypeName(n.quest.QuestType)} · perm {n.quest.QuestPermission || '—'} · rewards {(n.quest.PrizeList||[]).length}</span>{rewards.length?<span className="nodeRewards">🏆 {rewards.join(' · ')}</span>:null}</>}</button>{!isContext && !titleOnlyMode && <button className="sideQuestPlus" title={`Add sidequest from #${n.id}`} style={{left:p.x+nodeWidth-34,top:p.y+(compactMode?76:108)}} onClick={(e)=>{e.stopPropagation();onCreateSideQuest?.(n.quest);}}>↳+</button>}{isLast && !isContext && !titleOnlyMode && <button className="linePlus" title="Add next quest in line" style={{left:p.x+nodeWidth,top:p.y+(compactMode?34:48)}} onClick={(e)=>{e.stopPropagation();onCreateNext(n.quest, { x: p.x + colWidth, y: p.y });}}>+</button>}</React.Fragment>})}
     </div></div></div>;
 }
 
