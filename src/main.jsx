@@ -7,12 +7,23 @@ const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v1.1.0-beta.22';
+const APP_VERSION = 'v2.1.1';
 const CHANGELOG = [
-  { version: 'v1.1.0-beta.22', date: '2026-09-18', items: [
+  { version: 'v2.1.1', date: '2026-09-20', items: [
     'Added safe Delete quest actions from graph nodes, the inspector, and fullscreen edit, including undo support and cleanup of manual map links/positions.',
     'Made fullscreen reward cards larger and changed Add reward so the reward is added immediately without opening the side-drawer for an extra confirmation step.',
     'Widened and recolored the fullscreen in-game preview so it reads more clearly as the player-facing view.'
+  ] },
+  { version: 'v2.1.0', date: '2026-09-18', items: [
+    'Promoted the latest beta graph/editor improvements to stable, including top-row graph headroom, double-click node editing, raw <color=> palette helpers, and adjacent placement for newly created next-quest nodes.',
+    'Promoted the permission-chain reward helpers: + next quest now adds the hidden o.grant reward to the source quest, and command rewards include one-click grant/revoke helpers.',
+    'Included the XP badge reward picker and local badge preview library while keeping exported Quest.json image URLs public-game-safe.'
+  ] },
+  { version: 'v2.0.0', date: '2026-08-01', items: [
+    'Promoted beta to main as Quest Studio 2.0 with the optional AI Brain, uploaded Quest.json context, stored/shared OpenAI traffic support, and cached AI draft suggestions.',
+    'Included graph/editor stability improvements from the beta line, including crash recovery, safer graph movement, autosave compaction, and questline/permission-grant inference fixes.',
+    'Added the Cooldown helper in fullscreen edit with hour/day/week presets that still writes raw seconds into Quest.json.'
+
   ] },
   { version: 'v1.1.0-beta.21', date: '2026-09-16', items: [
     'Made permission grant/revoke command rewards first-class in the reward builder with one-click grant and revoke helpers.',
@@ -48,6 +59,7 @@ const CHANGELOG = [
   { version: 'v1.1.0-beta.13', date: '2026-08-03', items: [
     'Baked 39 XP badge assets into the beta app as local 512×512 previews with a manifest of public Freeimage URLs for exported Quest.json rewards.',
     'Added an XP badge quick-pick inside Command rewards that fills givexp %STEAMID% <amount>, label, amount marker, and public preview image URL.'
+
   ] },
   { version: 'v1.1.0-beta.12', date: '2026-08-01', items: [
     'Added a Cooldown helper in fullscreen edit with hour/day/week presets that writes the correct seconds value into Quest.json.',

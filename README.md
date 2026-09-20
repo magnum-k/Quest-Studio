@@ -165,6 +165,37 @@ npm test && npm run build
 9. Copy/upload it to the correct Quest System plugin folder on your Rust server.
 10. Reload/restart the plugin/server according to the Quest System plugin documentation.
 
+## Fullscreen edit window
+
+Open the fullscreen editor from the inspector with **Fullscreen edit** or by double-clicking a graph node.
+
+The edit window is split into two working areas:
+
+- **Left side — edit controls**
+  - Edit raw quest fields such as `QuestID`, `QuestPermission`, `QuestDisplayName`, `QuestDescription`, `QuestMissions`, quest type, target, action count, cooldown, repeatable state, and return-items setting.
+  - When XDQuest category mode is enabled, the **XDQuest category helper** separates the plugin category prefix from the visible quest title:
+    - `Category` writes the leading plugin category marker.
+    - `Category color` must be a hex color.
+    - `Line label` is the visible line/category label before the quest title.
+    - `Line color` may be hex or a named color if your existing quest text uses that convention.
+    - `Visible quest title` is the player-facing title after the category/line prefix.
+  - The raw `QuestDisplayName` field remains editable so advanced users can override or repair markup directly.
+  - Typing `<color=` in raw text fields opens the color helper overlay for inserting common hex colors.
+  - The **Rewards** section uses larger reward cards. Clicking a card opens the side-drawer editor for that reward.
+  - **+ Add reward** adds the reward to the current draft immediately after you confirm the add-reward modal. It does not require a second confirmation in the side drawer.
+
+- **Right side — In-game preview**
+  - Shows a player-facing preview of the current draft: title, quest type, repeatable/one-time state, required permission, description, objective, target/count, and rewards.
+  - This preview uses a different in-game-style background so it is easier to distinguish from the editor form.
+  - The preview is only a visual helper. Saving/exporting still writes the raw Quest System JSON fields.
+
+Important edit-window actions:
+
+- **Save quest** writes the fullscreen draft back into the in-browser working copy and updates autosave.
+- **Cancel** closes the fullscreen editor without applying the current draft changes.
+- **Delete quest** removes the selected quest from the in-browser working copy after a confirmation prompt. It also clears manual graph positions/links for that quest node. Use **Undo** before exporting if you deleted the wrong quest.
+- Changes are still local/browser-side until you click **Save file / Download Quest.json**.
+
 ## About the Quest System plugin
 
 Quest Studio is made to help edit configuration files for the Codefling Quest System plugin:
