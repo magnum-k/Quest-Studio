@@ -7,8 +7,13 @@ const autosaveKey = 'quest-json-editor:last-config';
 const backupsKey = 'quest-json-editor:local-backups';
 const aiBrainSuggestionsKey = 'quest-json-editor:ai-brain-suggestions:v1';
 const mapKey = (fileName) => `quest-json-editor-map:v3-cross-quest-access:${fileName || 'default'}`;
-const APP_VERSION = 'v2.1.0';
+const APP_VERSION = 'v2.1.1';
 const CHANGELOG = [
+  { version: 'v2.1.1', date: '2026-09-20', items: [
+    'Added safe Delete quest actions from graph nodes, the inspector, and fullscreen edit, including undo support and cleanup of manual map links/positions.',
+    'Made fullscreen reward cards larger and changed Add reward so the reward is added immediately without opening the side-drawer for an extra confirmation step.',
+    'Widened and recolored the fullscreen in-game preview so it reads more clearly as the player-facing view.'
+  ] },
   { version: 'v2.1.0', date: '2026-09-18', items: [
     'Promoted the latest beta graph/editor improvements to stable, including top-row graph headroom, double-click node editing, raw <color=> palette helpers, and adjacent placement for newly created next-quest nodes.',
     'Promoted the permission-chain reward helpers: + next quest now adds the hidden o.grant reward to the source quest, and command rewards include one-click grant/revoke helpers.',
@@ -18,6 +23,7 @@ const CHANGELOG = [
     'Promoted beta to main as Quest Studio 2.0 with the optional AI Brain, uploaded Quest.json context, stored/shared OpenAI traffic support, and cached AI draft suggestions.',
     'Included graph/editor stability improvements from the beta line, including crash recovery, safer graph movement, autosave compaction, and questline/permission-grant inference fixes.',
     'Added the Cooldown helper in fullscreen edit with hour/day/week presets that still writes raw seconds into Quest.json.'
+
   ] },
   { version: 'v1.1.0-beta.21', date: '2026-09-16', items: [
     'Made permission grant/revoke command rewards first-class in the reward builder with one-click grant and revoke helpers.',
@@ -857,7 +863,7 @@ function RewardEditor({ rewards, onChange, steamItems, quest }) {
       })}
     </div>}
     <RewardDrawer reward={selectedReward} index={selectedIndex ?? 0} steamItems={steamItems} onClose={() => setSelectedIndex(null)} onUpdate={(key, val) => update(selectedIndex, key, val)} onRemove={() => remove(selectedIndex)} />
-    {adding && <AddRewardDialog steamItems={steamItems} quest={quest} onClose={() => setAdding(false)} onAdd={(r) => { onChange([...safeRewards, r]); setSelectedIndex(safeRewards.length); setAdding(false); }} />}
+    {adding && <AddRewardDialog steamItems={steamItems} quest={quest} onClose={() => setAdding(false)} onAdd={(r) => { onChange([...safeRewards, r]); setSelectedIndex(null); setAdding(false); }} />}
   </section>;
 }
 
@@ -953,7 +959,7 @@ function AiBrainPanel({ draft, questContext, onApply }) {
   </section>;
 }
 
-function EditorModal({ quest, quests = [], onClose, onSave, steamItems, xdQuestCategoryMode = false }) {
+function EditorModal({ quest, quests = [], onClose, onSave, onDelete, steamItems, xdQuestCategoryMode = false }) {
   const [draft, setDraft] = useState(() => structuredClone(quest));
   const set = (key, value) => setDraft(d => ({ ...d, [key]: value }));
   const applyAiSuggestion = (suggestion = {}) => setDraft(d => ({
@@ -967,7 +973,7 @@ function EditorModal({ quest, quests = [], onClose, onSave, steamItems, xdQuestC
   const questContext = useMemo(() => aiQuestContext(quests, draft), [quests, draft]);
   const resetKey = `${draft?.QuestID || ''}:${draft?.QuestDisplayName || ''}:${draft?.QuestMissions || ''}:${draft?.QuestDescription || ''}`;
   return <div className="modalBackdrop" onMouseDown={onClose}><div className="modal" onMouseDown={e => e.stopPropagation()}>
-    <div className="modalHead"><div><b>Edit quest</b><small>ID {draft.QuestID} · series {series} · part {part ?? '—'}</small></div><button onClick={onClose}>×</button></div>
+    <div className="modalHead"><div><b>Edit quest</b><small>ID {draft.QuestID} · series {series} · part {part ?? '—'}</small></div><div className="modalHeadActions"><button className="danger subtleDanger" type="button" onClick={() => onDelete?.(draft)}>Delete quest</button><button onClick={onClose}>×</button></div></div>
     <div className="modalBody questEditLayout">
       <div className="questEditWorkspace" aria-label="Quest edit controls">
         <section className="formPanel prominent"><h3>Edit fields</h3><div className="two"><Field label="QuestID" type="number" value={draft.QuestID} onChange={v => set('QuestID', v)} /><Field label="QuestPermission — used for chains" value={draft.QuestPermission} onChange={v => set('QuestPermission', v)} /></div>
@@ -987,7 +993,7 @@ function EditorModal({ quest, quests = [], onClose, onSave, steamItems, xdQuestC
         </SoftRenderBoundary>
       </div>
     </div>
-    <div className="modalFoot"><button onClick={onClose}>Cancel</button><button className="primary" onClick={() => onSave(draft)}>Save quest</button></div>
+    <div className="modalFoot"><button className="danger subtleDanger" type="button" onClick={() => onDelete?.(draft)}>Delete quest</button><span className="modalFootSpacer"></span><button onClick={onClose}>Cancel</button><button className="primary" onClick={() => onSave(draft)}>Save quest</button></div>
   </div></div>;
 }
 
@@ -1064,7 +1070,7 @@ function sideQuestFrom(parent, existing) {
   return q;
 }
 
-function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, manualMap, setManualMap, onCreateNext, onCreateSideQuest, onApplyGridOrder, onOpenQuestEditor, issues = [], focusRequest = 0, compactMode = false, titleOnlyMode = false }) {
+function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, manualMap, setManualMap, onCreateNext, onCreateSideQuest, onDeleteQuest, onApplyGridOrder, onOpenQuestEditor, issues = [], focusRequest = 0, compactMode = false, titleOnlyMode = false }) {
   const graph = useMemo(() => buildQuestGraph(quests), [quests]);
   const shellRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -1444,17 +1450,17 @@ function Graph({ quests, selected, setSelected, groupFilter, query, steamItems, 
         });
       })}
       {filteredNodes.map(n=>{ const p=positions.get(n.id); const isContext=contextVisible.has(n.id); const firstSkin=titleOnlyMode ? null : extractSkinIds(n.quest).map(id=>steamItems[id]).find(Boolean); const rewards=titleOnlyMode ? [] : rewardSummary(n.quest.PrizeList).slice(0,2); const isLast=!outgoing.has(n.id); const issueCount=issueCounts[String(n.quest.QuestID)] || 0; const isStart=!incoming.has(n.id); const isRepeatable=!!n.quest?.IsRepeatable; const loopReturn=isRepeatable&&incoming.has(n.id); return <React.Fragment key={n.id}><button onMouseDown={e=>nodePointerDown(e,n)} onClick={e=>nodeClick(e,n)} onDoubleClick={e=>nodeDoubleClick(e,n)} className={'node '+(titleOnlyMode?'titleOnlyNode ':'')+(selected?.QuestID===n.quest.QuestID?'selected ':'')+(connectFrom===n.id?'connectFrom ':'')+(manualMode?'movable ':'')+(isRepeatable?'repeatable ':'')+(loopReturn?'loopReturn ':'')+(isContext?'searchContext ':'')} style={{left:p.x,top:p.y}} title="Click to select · double-click to fullscreen edit">
-        {!titleOnlyMode && <span className="nodeFlags">{isContext?<span className="flag context">connected outside search</span>:null}{isStart&&!isRepeatable?<span className="flag start">one-time start</span>:null}{isRepeatable?<span className="flag repeat">repeatable</span>:null}{loopReturn?<span className="flag loop">loop return</span>:null}</span>}{issueCount ? <span className="nodeBadge">{titleOnlyMode ? issueCount : `${issueCount} issues`}</span> : null}{firstSkin?.preview && <img className="nodeSkin" src={firstSkin.preview}/>}<span className="nodeId">#{n.id}{titleOnlyMode ? '' : ` · ${n.group}${n.part!=null?` · Part ${n.part}`:''}`}</span><TaggedText className="nodeTitle" value={questTitle(n.quest)}/>{!titleOnlyMode && <><small><TaggedText value={n.quest.QuestMissions}/></small><span className="meta">{questTypeName(n.quest.QuestType)} · perm {n.quest.QuestPermission || '—'} · rewards {(n.quest.PrizeList||[]).length}</span>{rewards.length?<span className="nodeRewards">🏆 {rewards.join(' · ')}</span>:null}</>}</button>{!isContext && !titleOnlyMode && <button className="sideQuestPlus" title={`Add sidequest from #${n.id}`} style={{left:p.x+nodeWidth-34,top:p.y+(compactMode?76:108)}} onClick={(e)=>{e.stopPropagation();onCreateSideQuest?.(n.quest);}}>↳+</button>}{isLast && !isContext && !titleOnlyMode && <button className="linePlus" title="Add next quest in line" style={{left:p.x+nodeWidth,top:p.y+(compactMode?34:48)}} onClick={(e)=>{e.stopPropagation();onCreateNext(n.quest, { x: p.x + colWidth, y: p.y });}}>+</button>}</React.Fragment>})}
+        {!titleOnlyMode && <span className="nodeFlags">{isContext?<span className="flag context">connected outside search</span>:null}{isStart&&!isRepeatable?<span className="flag start">one-time start</span>:null}{isRepeatable?<span className="flag repeat">repeatable</span>:null}{loopReturn?<span className="flag loop">loop return</span>:null}</span>}<span className="nodeDeleteHint" title={`Delete quest #${n.id}`} onClick={(e)=>{e.preventDefault();e.stopPropagation();onDeleteQuest?.(n.quest);}}>×</span>{issueCount ? <span className="nodeBadge">{titleOnlyMode ? issueCount : `${issueCount} issues`}</span> : null}{firstSkin?.preview && <img className="nodeSkin" src={firstSkin.preview}/>}<span className="nodeId">#{n.id}{titleOnlyMode ? '' : ` · ${n.group}${n.part!=null?` · Part ${n.part}`:''}`}</span><TaggedText className="nodeTitle" value={questTitle(n.quest)}/>{!titleOnlyMode && <><small><TaggedText value={n.quest.QuestMissions}/></small><span className="meta">{questTypeName(n.quest.QuestType)} · perm {n.quest.QuestPermission || '—'} · rewards {(n.quest.PrizeList||[]).length}</span>{rewards.length?<span className="nodeRewards">🏆 {rewards.join(' · ')}</span>:null}</>}</button>{!isContext && !titleOnlyMode && <button className="sideQuestPlus" title={`Add sidequest from #${n.id}`} style={{left:p.x+nodeWidth-34,top:p.y+(compactMode?76:108)}} onClick={(e)=>{e.stopPropagation();onCreateSideQuest?.(n.quest);}}>↳+</button>}{isLast && !isContext && !titleOnlyMode && <button className="linePlus" title="Add next quest in line" style={{left:p.x+nodeWidth,top:p.y+(compactMode?34:48)}} onClick={(e)=>{e.stopPropagation();onCreateNext(n.quest, { x: p.x + colWidth, y: p.y });}}>+</button>}</React.Fragment>})}
     </div></div></div>;
 }
 
-function QuestInspector({ quest, baselineQuest, steamItems, issues = [], onPatch, onAdvanced }) {
+function QuestInspector({ quest, baselineQuest, steamItems, issues = [], onPatch, onAdvanced, onDelete }) {
   if (!quest) return <aside className="side inspector"><p>No quest selected.</p></aside>;
   const selectedIssues = issues.filter(i => i.quest?.QuestID === quest.QuestID);
   const changedFields = changedQuestFields(quest, baselineQuest);
   const patch = (key, value) => onPatch({ ...quest, [key]: value });
   return <aside className="side inspector">
-    <div className="inspectorHead"><div><h2>Inspector</h2><TaggedText className="sideTitle" value={questTitle(quest)} /></div><button className="primary" onClick={onAdvanced}>Fullscreen edit</button></div>
+    <div className="inspectorHead"><div><h2>Inspector</h2><TaggedText className="sideTitle" value={questTitle(quest)} /></div><div className="inspectorActions"><button className="primary" onClick={onAdvanced}>Fullscreen edit</button><button className="danger subtleDanger" type="button" onClick={() => onDelete?.(quest)}>Delete quest</button></div></div>
     <div className="badges">{selectedIssues.length ? selectedIssues.slice(0, 6).map((i, idx) => <span className={`badge ${i.severity}`} key={idx}>{i.field}: {i.message}</span>) : <span className="badge ok">No local issues</span>}{changedFields.length ? <span className="badge changed">{changedFields.length} changed fields</span> : <span className="badge clean">No field changes</span>}</div>
     {changedFields.length ? <div className="changedFields"><b>Changed since load/download</b><div>{changedFields.slice(0, 10).map(field => <span key={field}>{field}</span>)}{changedFields.length > 10 ? <span>+{changedFields.length - 10} more</span> : null}</div></div> : null}
     <div className="quickGrid"><p><b>ID:</b> {quest.QuestID}</p><p><b>Group:</b> {questGroup(quest)}</p><p><b>Series:</b> {questSeriesKey(quest)}</p><p><b>Type:</b> {quest.QuestType} — {questTypeName(quest.QuestType)}</p></div>
@@ -1675,6 +1681,25 @@ function App() {
   }
   function patchQuest(q){ pushUndo(`Edit quest #${q.QuestID}`); setQuests(list=>list.map(x=>x.QuestID===q.QuestID?q:x)); setSelected(q); refreshGraphView(); }
   function createNew(){ setEditing(newQuestTemplate(quests)); }
+  function deleteQuest(q){
+    if (!q) return;
+    const id = String(q.QuestID);
+    const title = stripTags(cleanDisplayNameMarkup(q.QuestDisplayName || `Quest ${id}`)).replace(/\s+/g, ' ').trim() || `Quest ${id}`;
+    if (!confirm(`Delete quest #${id} — ${title}?\n\nThis removes it from the in-browser Quest.json working copy and clears manual map links/positions for this node. You can still use Undo before exporting.`)) return;
+    pushUndo(`Delete quest #${id}`);
+    const nextQuests = quests.filter(x => String(x.QuestID) !== id);
+    const nextSelected = nextQuests.find(x => String(x.QuestID) !== id) || null;
+    persistAutosaveNow({ quests: nextQuests, selectedId: nextSelected?.QuestID ?? null });
+    setQuests(nextQuests);
+    setSelected(nextSelected);
+    setEditing(null);
+    setManualMap(m => {
+      const positions = { ...(m.positions || {}) };
+      delete positions[id];
+      return { ...m, positions, links: (m.links || []).filter(l => String(l.source) !== id && String(l.target) !== id) };
+    });
+    refreshGraphView();
+  }
   function createNextQuest(prev, sourcePosition){
     pushUndo(`Create next quest after #${prev.QuestID}`);
     const q=nextQuestFrom(prev, quests);
@@ -1763,11 +1788,11 @@ function App() {
     const status = fileNeedsDownload ? 'needs download' : (quests.length ? 'downloaded' : 'empty');
     document.title = `${fileNeedsDownload ? '● ' : ''}Quest Studio ${APP_VERSION} — ${name} — ${status}`;
   }, [fileName, fileNeedsDownload, quests.length]);
-  const workspace = activeTab === 'changelog' ? <ChangelogView/> : !quests.length ? <div className="empty"><h2>Upload Quest.json</h2><p>The file is kept in memory. Manual positions/links are saved locally per filename and can be exported separately.</p></div> : activeTab === 'graph' ? <Graph quests={quests} selected={selected} setSelected={setSelected} groupFilter={groupFilter} query={query} steamItems={steamItems} manualMap={manualMap} setManualMap={setManualMap} onCreateNext={createNextQuest} onCreateSideQuest={createSideQuest} onApplyGridOrder={applyGridOrderToJson} onOpenQuestEditor={setEditing} issues={issues} focusRequest={graphFocusRequest} compactMode={compactMode} titleOnlyMode={titleOnlyMode}/> : activeTab === 'list' ? <QuestListView quests={quests} selected={selected} setSelected={setSelected} onShowGraph={focusQuestInGraph} query={query}/> : activeTab === 'validation' ? <ValidationView issues={issues} setSelected={focusQuestInGraph} selected={selected}/> : <SettingsView quests={quests} baselineQuests={baselineQuests} graph={graph} manualMap={manualMap} mapSteamStatus={mapSteamStatus} issues={issues} backups={localBackups} fileName={fileName} fileStatus={fileStatus} fileNeedsDownload={fileNeedsDownload} xdQuestCategoryMode={xdQuestCategoryMode} setXdQuestCategoryMode={setXdQuestCategoryMode} onDownloadJson={downloadJson} onDownloadMap={downloadMap} onNewQuest={createNew} onShowGraph={focusQuestInGraph} onOpenQuest={openQuestInspector} onSearchRelated={searchRelated}/>;
+  const workspace = activeTab === 'changelog' ? <ChangelogView/> : !quests.length ? <div className="empty"><h2>Upload Quest.json</h2><p>The file is kept in memory. Manual positions/links are saved locally per filename and can be exported separately.</p></div> : activeTab === 'graph' ? <Graph quests={quests} selected={selected} setSelected={setSelected} groupFilter={groupFilter} query={query} steamItems={steamItems} manualMap={manualMap} setManualMap={setManualMap} onCreateNext={createNextQuest} onCreateSideQuest={createSideQuest} onDeleteQuest={deleteQuest} onApplyGridOrder={applyGridOrderToJson} onOpenQuestEditor={setEditing} issues={issues} focusRequest={graphFocusRequest} compactMode={compactMode} titleOnlyMode={titleOnlyMode}/> : activeTab === 'list' ? <QuestListView quests={quests} selected={selected} setSelected={setSelected} onShowGraph={focusQuestInGraph} query={query}/> : activeTab === 'validation' ? <ValidationView issues={issues} setSelected={focusQuestInGraph} selected={selected}/> : <SettingsView quests={quests} baselineQuests={baselineQuests} graph={graph} manualMap={manualMap} mapSteamStatus={mapSteamStatus} issues={issues} backups={localBackups} fileName={fileName} fileStatus={fileStatus} fileNeedsDownload={fileNeedsDownload} xdQuestCategoryMode={xdQuestCategoryMode} setXdQuestCategoryMode={setXdQuestCategoryMode} onDownloadJson={downloadJson} onDownloadMap={downloadMap} onNewQuest={createNew} onShowGraph={focusQuestInGraph} onOpenQuest={openQuestInspector} onSearchRelated={searchRelated}/>;
   return <main className={`${compactMode ? 'compactMode' : 'comfortMode'} ${titleOnlyMode ? 'titleOnlyMode' : ''}`}><header><div className="brandBlock"><img className="brandLogo" src="/12g-logo.jpg" alt="12G" /><div><h1>Quest Studio <span className="appVersion">{APP_VERSION}</span></h1><p>Local XDQuest editor with a visual quest graph, inspector, validation, and safe JSON export.</p></div></div><div className="actions"><input ref={fileRef} type="file" accept=".json,application/json" onChange={onFile}/><button onClick={()=>fileRef.current.click()}>Load Quest.json</button><button className="primary" disabled={!quests.length} onClick={downloadJson}>Save file / Download Quest.json</button><button disabled={!quests.length} onClick={downloadMap}>Download map</button><button onClick={()=>setShowSaveInfo(true)}>Save info</button></div></header>
     <section className="tabs">{tabs.map(([id,label]) => <button key={id} className={activeTab===id?'active':''} onClick={()=>setActiveTab(id)}>{label}</button>)}</section>
     <section className="toolbar"><b>{fileName}</b><span>{quests.length} quests · {graph.links.length} auto chains · {(manualMap.links||[]).length} manual · autosaves instantly{lastSavedAt ? ` · last ${new Date(lastSavedAt).toLocaleTimeString()}` : ''} · <em className={fileNeedsDownload?'fileDirty':'fileClean'}>{fileStatus}</em> · {mapSteamStatus}</span><button className="undoButton" disabled={!undoStack.length} title={undoStack[0] ? `Undo: ${undoStack[0].label}` : 'Nothing to undo'} onClick={undoLastAction}>↶ Undo{undoStack[0] ? `: ${undoStack[0].label}` : ''}</button><input placeholder="Search quest, ID, text…" value={query} onChange={e=>setQuery(e.target.value)}/><select value={groupFilter} onChange={e=>setGroupFilter(e.target.value)}><option value="">All groups</option>{graph.groups.map(g=><option key={g}>{g}</option>)}</select><button className={compactMode?'active densityToggle':'densityToggle'} onClick={()=>setCompactMode(v=>!v)}>{compactMode?'Compact on':'Comfort mode'}</button><button className={titleOnlyMode?'active densityToggle':'densityToggle'} onClick={()=>setTitleOnlyMode(v=>!v)}>{titleOnlyMode?'Graph boxes: title only':'Graph boxes: full'}</button><button onClick={createNew}>+ New quest</button></section>
-    <div className="layout"><section className="mainPanel">{workspace}</section><QuestInspector quest={selected} baselineQuest={selected?.QuestID == null ? null : baselineById.get(String(selected.QuestID))} steamItems={steamItems} issues={issues} onPatch={patchQuest} onAdvanced={()=>selected && setEditing(selected)} /></div>{editing&&<EditorModal quest={editing} quests={quests} steamItems={steamItems} xdQuestCategoryMode={xdQuestCategoryMode} onClose={()=>setEditing(null)} onSave={saveQuest}/>} {showSaveInfo&&<SaveInfoOverlay fileName={fileName} sourceBaseName={sourceBaseName} savedAt={lastSavedAt} backups={localBackups} onCreateBackup={createLocalBackup} onRestoreBackup={restoreLocalBackup} onClose={()=>setShowSaveInfo(false)}/>}</main>;
+    <div className="layout"><section className="mainPanel">{workspace}</section><QuestInspector quest={selected} baselineQuest={selected?.QuestID == null ? null : baselineById.get(String(selected.QuestID))} steamItems={steamItems} issues={issues} onPatch={patchQuest} onAdvanced={()=>selected && setEditing(selected)} onDelete={deleteQuest} /></div>{editing&&<EditorModal quest={editing} quests={quests} steamItems={steamItems} xdQuestCategoryMode={xdQuestCategoryMode} onClose={()=>setEditing(null)} onSave={saveQuest} onDelete={deleteQuest}/>} {showSaveInfo&&<SaveInfoOverlay fileName={fileName} sourceBaseName={sourceBaseName} savedAt={lastSavedAt} backups={localBackups} onCreateBackup={createLocalBackup} onRestoreBackup={restoreLocalBackup} onClose={()=>setShowSaveInfo(false)}/>}</main>;
 }
 
 createRoot(document.getElementById('root')).render(<AppCrashBoundary><App/></AppCrashBoundary>);
